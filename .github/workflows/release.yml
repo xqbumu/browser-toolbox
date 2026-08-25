@@ -1,0 +1,162 @@
+name: Release
+
+# 触发方式：
+# 1. 自动发布：推送 v* 标签（如 v1.2.0）→ 构建三端产物并发正式 Release
+# 2. 手动发布：workflow_dispatch 填 version（如 v1.2.0）→ 在当前分支打标签并发布（同名已存在则覆盖更新）
+# 3. 手动更新 latest：workflow_dispatch 不填 version → 重建并覆盖 latest 预发布
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 v1.2.0）；留空则仅更新 latest 预发布'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & zip
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npx vitest run
+
+      - name: Build Chrome (MV3) zip
+        run: npx wxt zip -b chrome --mv3
+
+      - name: Build Firefox (MV2) zip + sources zip
+        # AMO 要求压缩包内含源码，--sources 额外生成 *-sources.zip 供商店审核
+        run: npx wxt zip -b firefox --mv2 --sources
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zips
+          path: .output/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: zips
+          path: dist
+
+      - name: Resolve release mode & tag
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            echo "mode=stable" >> "$GITHUB_OUTPUT"
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "$INPUT_VERSION" ]]; then
+            echo "mode=latest" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TAG="$INPUT_VERSION"
+          [[ "$TAG" == v* ]] || TAG="v$TAG"
+          if ! grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' <<<"$TAG"; then
+            echo "::error::版本号格式不合法：$INPUT_VERSION（应为 vX.Y.Z，可带 -prerelease 后缀）"
+            exit 1
+          fi
+          echo "mode=stable" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag matches package.json version
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          PKG_VER="v$(node -p "require('./package.json').version")"
+          if [[ "$TAG" != latest && "$TAG" != "$PKG_VER" ]]; then
+            echo "::warning::标签 $TAG 与 package.json 版本 $PKG_VER 不一致"
+          fi
+
+      - name: Rename assets with version
+        # WXT 产物名为 {name}-{pkgVersion}-{browser}.zip，统一改写为 {name}-{TAG}-*.zip
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          for f in dist/*.zip; do
+            base=$(basename "$f")
+            suffix="${base#"$NAME-$VER"-}"
+            mv "$f" "dist/${NAME}-${TAG}-${suffix}"
+          done
+          ls -la dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.zip > SHA256SUMS.txt
+
+      # 统一「先删后建」实现发布/更新语义：
+      # - stable：同标签重发 = 覆盖更新该版本
+      # - latest：每次重建 = 滚动指向最新 main 提交的预发布
+      - name: Remove existing release
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: gh release delete "$TAG" --yes --cleanup-tag || true
+
+      - name: Create stable release
+        if: steps.meta.outputs.mode == 'stable'
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --title "$TAG" \
+            --target "$GITHUB_SHA" \
+            --generate-notes
+
+      - name: Update latest prerelease
+        if: steps.meta.outputs.mode == 'latest'
+        run: |
+          {
+            echo "滚动构建（非稳定版）：基于 main @ ${GITHUB_SHA::7}"
+            echo
+            echo "- 构建时间：$(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "- 包含 Chrome MV3 与 Firefox MV2 安装包及校验和"
+            echo "- 稳定版请从 [Releases](../../releases) 选择不带 latest/pre 标记的版本"
+          } > NOTES.md
+          gh release create latest dist/* \
+            --prerelease \
+            --title "Latest build ($(date -u '+%Y-%m-%d'))" \
+            --target "$GITHUB_SHA" \
+            --notes-file NOTES.md
