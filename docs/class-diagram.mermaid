@@ -1,0 +1,86 @@
+classDiagram
+    class CaptureResult {
+      +boolean ok
+      +CaptureMode mode
+      +string? fileName
+      +string? dataUrl
+      +OutputFormat? format
+      +number? tabId
+      +string? url
+      +string? title
+      +string? error
+      +boolean? retried
+      +boolean? cancelled
+      +string? warning
+      +boolean? downloadFailed
+      +string? downloadError
+    }
+    class BatchResult {
+      +number total
+      +number success
+      +number failed
+      +CaptureResult[] items
+      +boolean? cancelled
+      +boolean? downloadFailed
+      +string? downloadError
+    }
+    class ProgressEvent {
+      <<union>>
+      +start(total, batchId?, label?)
+      +item(index, total, label, retrying?)
+      +stage(phase, label, current?, total?, warning?)
+      +cancelled(scope, message)
+      +done(result, warning?)
+    }
+    class CaptureJobContext {
+      +()=>boolean? shouldCancel
+      +boolean? reportStage
+      +string? batchId
+    }
+    class CaptureService {
+      -Set~ProgressListener~ listeners
+      +onProgress(listener) void
+      -emit(event) void
+      +captureFullpage(tabId, config, ctx?) CaptureResult
+      +captureVisible(tabId, config) CaptureResult
+      +captureArea(tabId, rect, config) CaptureResult
+      +batchTabs(windowId, config, ctx?) BatchResult
+      +batchUrls(urls, config, ctx?) BatchResult
+      +captureByMode(tabId, mode, config, ctx?) CaptureResult
+    }
+    class ScrollCaptureEngine {
+      -BrowserAdapter adapter
+      +run(tabId, config, opts?) FullpageCaptureOutcome
+      -getMetrics(tabId) PageMetrics
+      -scrollTo(tabId, y) number
+      -captureSlices(tabId, metrics, config, opts) Slice[]
+    }
+    class BatchTabsRunner {
+      +run(windowId, config, onProgress?, ctx?) BatchResult
+      -captureOneTab(tabId, config) CaptureResult
+    }
+    class BatchUrlsRunner {
+      +run(urls, config, onProgress?, ctx?) BatchResult
+      -captureOneUrl(url, config) CaptureResult
+      -waitForLoad(tabId, config) void
+    }
+    class RenderStabilityWatcher {
+      +waitUntilStable(opts) StableWaitResult
+    }
+    class SelectionOverlay {
+      +select() Promise~Rect~
+      +cancel() void
+    }
+    class CaptureCancelledError {
+      <<Error>>
+    }
+    CaptureService --> ScrollCaptureEngine : 创建
+    CaptureService --> BatchTabsRunner : 委托
+    CaptureService --> BatchUrlsRunner : 委托
+    CaptureService --> CaptureResult : 返回
+    CaptureService --> BatchResult : 返回
+    ScrollCaptureEngine --> RenderStabilityWatcher : 经 content 调用
+    ScrollCaptureEngine ..> CaptureCancelledError : 抛出
+    ScrollCaptureEngine ..> ProgressEvent : emit
+    BatchTabsRunner ..> ProgressEvent : emit
+    BatchUrlsRunner ..> ProgressEvent : emit

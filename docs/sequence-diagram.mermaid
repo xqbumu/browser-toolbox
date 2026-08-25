@@ -1,0 +1,60 @@
+sequenceDiagram
+    participant P as Popup(App)
+    participant B as Background
+    participant S as CaptureService
+    participant E as ScrollCaptureEngine
+    participant C as Content
+    P->>P: onCapture('fullpage') busy=true, activeJob={single}
+    P->>B: CAPTURE_FULLPAGE{tabId,config}
+    B->>B: cancelFlags.set('single:tabId', false)
+    B->>S: captureFullpage(tabId, config, {reportStage, shouldCancel})
+    S->>E: run(tabId, config, {onProgress, shouldCancel})
+    E-->>S: stage(preparing)
+    S-->>B: emit(stage)
+    B-->>P: __WXT_PROGRESS__ stage(preparing)
+    E->>C: GET_PAGE_METRICS / SCROLL_TO(0) / SCAN_FIXED / HIDE_FIXED / TRIGGER_LAZY_LOAD
+    E-->>S: stage(waiting)
+    E->>C: WAIT_STABLE(maxWaitMs)
+    C-->>E: {stable, timedOut, elapsedMs}
+    Note over E: timedOut=true → warning
+    loop i in positions
+        E->>E: shouldCancel? 检查
+        E->>C: SCROLL_TO(y) + sleep(stableWaitMs)
+        E->>E: captureTab / cropSlice
+        E-->>S: stage(scrolling, current=i+1, total=N)
+        S-->>B: emit
+        B-->>P: stage(scrolling)
+    end
+    E-->>S: stage(stitching)
+    E->>E: Stitcher 拼接
+    E-->>S: {dataUrl, warning}
+    S-->>B: CaptureResult{ok:true, warning}
+    B->>B: maybeDownload → 写回 downloadFailed?
+    B-->>P: CaptureResult
+    P->>P: status(ok / warn / err)
+    alt 用户点取消
+        P->>B: CANCEL_CAPTURE{scope:'single', tabId}
+        B->>B: cancelFlags.set('single:tabId', true)
+        E->>E: 下一片检查 → throw CaptureCancelledError
+        S-->>B: CaptureResult{ok:false, cancelled:true}
+        B-->>P: CaptureResult(cancelled)
+        P->>P: status('已取消截图')
+    end
+
+    rect rgb(240, 248, 255)
+    Note over P,C: —— 选区截图（回显 + 取消） ——
+    P->>B: CAPTURE_AREA(空 rect)
+    P->>P: window.close()
+    B->>C: START_SELECTION
+    C->>C: SelectionOverlay.select()
+    alt 框选完成
+        C-->>B: {ok:true, data:rect}
+        B->>B: captureArea + maybeDownload + recordHistory
+        B->>C: SHOW_TOAST{ok/warn/err, text}
+        C->>C: showToast(...) 页面顶部回显
+    else Esc 取消
+        C->>C: overlay.cancel() → showToast('已取消选区')
+        C-->>B: {ok:false, error:'已取消选区'}
+        B-->>B: 直接返回，不再回显
+    end
+    end

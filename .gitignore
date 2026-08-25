@@ -1,0 +1,32 @@
+# 依赖
+node_modules/
+
+# 构建产物
+.output/
+.wxt/
+dist/
+build/
+*.zip
+
+# 测试
+coverage/
+vitest.config.ts.timestamp-*.mjs
+
+# 日志与缓存
+*.log
+*.tsbuildinfo
+.cache/
+.temp/
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# 系统 / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
