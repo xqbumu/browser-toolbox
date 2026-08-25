@@ -28,11 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
 
       - run: npm ci
@@ -50,10 +50,18 @@ jobs:
         # AMO 要求压缩包内含源码，--sources 额外生成 *-sources.zip 供商店审核
         run: npx wxt zip -b firefox --mv2 --sources
 
-      - uses: actions/upload-artifact@v4
+      # 关键：upload-artifact 默认排除隐藏目录（.output 以 . 开头会被整体跳过，
+      # 导致 "No files were found"），先拷贝到非隐藏目录再上传
+      - name: Stage zips
+        run: |
+          mkdir -p artifacts
+          cp .output/*.zip artifacts/
+          ls -la artifacts
+
+      - uses: actions/upload-artifact@v7
         with:
           name: zips
-          path: .output/*.zip
+          path: artifacts/*.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -65,9 +73,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: zips
           path: dist
