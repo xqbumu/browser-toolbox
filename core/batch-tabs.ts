@@ -38,7 +38,9 @@ export class BatchTabsRunner {
     const allTabs = await this.adapter.queryTabs(windowId);
     const tabs = allTabs.filter((t) => isCapturable(t.url));
     const total = tabs.length;
-    log.info(`开始按选项卡批量截图，共 ${total} 个可截取选项卡`);
+    // B6：记录被过滤掉的不可截取选项卡数量，供 popup 汇总提示
+    const skipped = allTabs.length - tabs.length;
+    log.info(`开始按选项卡批量截图，共 ${total} 个可截取选项卡（跳过 ${skipped} 个不可截取）`);
 
     // A5：start 携带 batchId，供 popup 取消定位
     onProgress?.({ kind: 'start', total, batchId: ctx?.batchId });
@@ -54,7 +56,7 @@ export class BatchTabsRunner {
       }
       const tab = tabs[i];
       const label = tab.title || tab.url || `tab ${i + 1}`;
-      onProgress?.({ kind: 'item', index: i + 1, total, label });
+      onProgress?.({ kind: 'item', index: i + 1, total, label, batchId: ctx?.batchId });
       items.push(await this.captureOneTab(tab.id, config));
     }
 
@@ -68,7 +70,7 @@ export class BatchTabsRunner {
           }
           const tab = tabs[i];
           const label = `重试: ${tab.title || tab.url || `tab ${i + 1}`}`;
-          onProgress?.({ kind: 'item', index: i + 1, total, label, retrying: true });
+          onProgress?.({ kind: 'item', index: i + 1, total, label, retrying: true, batchId: ctx?.batchId });
           const retry = await this.captureOneTab(tab.id, config);
           retry.retried = true;
           items[i] = retry;
@@ -94,6 +96,7 @@ export class BatchTabsRunner {
 
     const result = summarize(items);
     result.cancelled = cancelled;
+    result.skipped = skipped;
     if (cancelled) {
       onProgress?.({ kind: 'cancelled', scope: 'batch', message: '已取消批量截图' });
     }

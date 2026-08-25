@@ -80,7 +80,7 @@ export type PopupRequest =
 
 export type ProgressEvent =
   | { kind: 'start'; total: number; batchId?: string; label?: string }
-  | { kind: 'item'; index: number; total: number; label: string; retrying?: boolean }
+  | { kind: 'item'; index: number; total: number; label: string; retrying?: boolean; batchId?: string }
   | {
       kind: 'stage';
       phase: FullpagePhase;

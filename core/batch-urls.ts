@@ -54,7 +54,7 @@ export class BatchUrlsRunner {
         break;
       }
       const url = validUrls[i];
-      onProgress?.({ kind: 'item', index: i + 1, total, label: url });
+      onProgress?.({ kind: 'item', index: i + 1, total, label: url, batchId: ctx?.batchId });
       items.push(await this.captureOneUrl(url, config));
     }
 
@@ -67,7 +67,7 @@ export class BatchUrlsRunner {
             break;
           }
           const url = validUrls[i];
-          onProgress?.({ kind: 'item', index: i + 1, total, label: `重试: ${url}`, retrying: true });
+          onProgress?.({ kind: 'item', index: i + 1, total, label: `重试: ${url}`, retrying: true, batchId: ctx?.batchId });
           const retry = await this.captureOneUrl(url, config);
           retry.retried = true;
           items[i] = retry;

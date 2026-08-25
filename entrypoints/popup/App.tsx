@@ -5,14 +5,19 @@
  * 复用 ModeSelector / BatchPanel / ProgressBar 不改其内部逻辑。
  *
  * P0：整页分阶段进度（stage）、超时/下载失败 warn 状态、busy 时取消按钮（single/batch）。
+ * P1：失败友好文案 + 一键重试（B2）、成功后快捷操作（B3）、复制剪贴板（B4）、恢复进度（B5）。
+ * P2：轻量 toast 系统 + 主按钮 loading 动效 + 文案随阶段变化（C2）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DEFAULT_CONFIG, type CaptureConfig } from '@/types/config';
 import type { CaptureMode, CaptureResult, BatchResult } from '@/types/capture';
 import type { ScreenshotRecord, ScreenshotListItem } from '@/types/history';
-import type { PopupRequest, PopupResponse, ProgressEvent } from '@/types/messages';
+import type { PopupRequest, PopupResponse, ProgressEvent, ToastKind } from '@/types/messages';
 import type { Capabilities } from '@/adapters/browser-adapter';
 import { getCapabilities } from '@/utils/capabilities';
+import { dataUrlToBlob } from '@/utils/helpers';
+import { friendlyError } from '@/utils/errors';
+import { copyImageToClipboard } from '@/utils/clipboard';
 import { ModeSelector } from './components/ModeSelector';
 import { BatchPanel } from './components/BatchPanel';
 import { ProgressBar } from './components/ProgressBar';
@@ -34,14 +39,19 @@ type StatusState = { kind: StatusKind; text: string } | null;
 /** 当前进行中的任务，用于取消定位（A5） */
 type ActiveJob = { kind: 'single'; tabId: number } | { kind: 'batch'; batchId?: string };
 
-const EMPTY_RECT = { x: 0, y: 0, width: 0, height: 0 };
+/** 轻量 toast 条目（C2） */
+type ToastItem = { id: number; kind: ToastKind; text: string };
 
-/** 单张截图结果 → 状态文案（区分取消/下载失败/超时/成功） */
+const EMPTY_RECT = { x: 0, y: 0, width: 0, height: 0 };
+/** toast 自动消失时长（ms） */
+const TOAST_TTL_MS = 2500;
+
+/** 单张截图结果 → 状态文案（区分取消/下载失败/超时/成功；错误走友好文案 B2） */
 function captureStatus(result: CaptureResult): StatusState {
   if (result.cancelled) return { kind: 'info', text: '已取消截图' };
-  if (!result.ok) return { kind: 'err', text: result.error ?? '截图失败' };
+  if (!result.ok) return { kind: 'err', text: friendlyError(result.error) };
   if (result.downloadFailed) {
-    return { kind: 'warn', text: `✅ 截图完成，⚠️ 下载失败：${result.downloadError ?? ''}` };
+    return { kind: 'warn', text: `✅ 截图完成，⚠️ 下载失败：${friendlyError(result.downloadError)}` };
   }
   if (result.warning) {
     return { kind: 'warn', text: `已下载：${result.fileName ?? ''}（${result.warning}）` };
@@ -60,6 +70,19 @@ function batchStatus(result: BatchResult): StatusState {
   return { kind: 'ok', text: '批量截图完成，已打包下载' };
 }
 
+/** busy 时主按钮文案随进度阶段变化（C2，复用 P0 stage/item 事件） */
+function loadingLabel(progress: ProgressEvent | null): string {
+  if (progress?.kind === 'stage') {
+    if (progress.phase === 'scrolling' && progress.current != null && progress.total != null) {
+      return `截图 ${progress.current}/${progress.total}`;
+    }
+    return progress.label;
+  }
+  if (progress?.kind === 'item') return `批量截图 ${progress.index}/${progress.total}`;
+  if (progress?.kind === 'start') return '批量准备中…';
+  return '截图中…';
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('capture');
   const [mode, setMode] = useState<CaptureMode>(DEFAULT_CONFIG.mode);
@@ -74,6 +97,21 @@ export default function App() {
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [historyCount, setHistoryCount] = useState(0);
   const [preview, setPreview] = useState<ScreenshotRecord | null>(null);
+  // P1：最近一次单张成功结果（供快捷操作），失败模式（供一键重试）
+  const [lastResult, setLastResult] = useState<CaptureResult | null>(null);
+  const [lastFailedMode, setLastFailedMode] = useState<CaptureMode | null>(null);
+  // P2：toast 堆叠
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const toastSeq = useRef(0);
+
+  /** 推送一条 toast，TTL 后自动移除（C2） */
+  function pushToast(kind: ToastKind, text: string): void {
+    const id = ++toastSeq.current;
+    setToasts((prev) => [...prev, { id, kind, text }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, TOAST_TTL_MS);
+  }
 
   useEffect(() => {
     void init();
@@ -102,10 +140,11 @@ export default function App() {
   async function init(): Promise<void> {
     try {
       setCaps(getCapabilities());
-      const [cfg, tabs, activeTabs] = await Promise.all([
+      const [cfg, tabs, activeTabs, savedProgress] = await Promise.all([
         request<CaptureConfig>({ type: 'GET_CONFIG', payload: {} }),
         browser.tabs.query({ currentWindow: true }),
         browser.tabs.query({ active: true, currentWindow: true }),
+        request<ProgressEvent | null>({ type: 'GET_PROGRESS', payload: {} }),
       ]);
       setConfig(cfg);
       setMode(cfg.mode);
@@ -115,8 +154,33 @@ export default function App() {
         setTabId(active.id);
         setWindowId(active.windowId ?? null);
       }
+      // B5：恢复 popup 重开前的进行中进度（非 done 恢复 busy/progress；done 正常收尾）
+      if (savedProgress) restoreProgress(savedProgress, active?.id ?? null);
     } catch (e) {
-      setStatus({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      setStatus({ kind: 'err', text: friendlyError(e instanceof Error ? e.message : String(e)) });
+    }
+  }
+
+  /** 根据 GET_PROGRESS 快照恢复进度与任务态（B5） */
+  function restoreProgress(p: ProgressEvent, currentTabId: number | null): void {
+    if (p.kind === 'done') {
+      setBusy(false);
+      setActiveJob(null);
+      setProgress(null);
+      return;
+    }
+    setBusy(true);
+    setProgress(p);
+    // 恢复取消定位（best-effort）：stage=单张整页、start 带 batchId / item / cancelled=批量
+    if (p.kind === 'stage') {
+      setActiveJob(currentTabId != null ? { kind: 'single', tabId: currentTabId } : null);
+    } else if (p.kind === 'start' && p.batchId) {
+      setActiveJob({ kind: 'batch', batchId: p.batchId });
+    } else if (p.kind === 'item') {
+      // B5：item 事件透传 batchId，恢复后可正确定位批量取消
+      setActiveJob(p.batchId ? { kind: 'batch', batchId: p.batchId } : { kind: 'batch' });
+    } else if (p.kind === 'cancelled') {
+      setActiveJob({ kind: 'batch' });
     }
   }
 
@@ -134,6 +198,8 @@ export default function App() {
     setProgress(null);
     setActiveJob({ kind: 'single', tabId: tabId! });
     setStatus({ kind: 'info', text: '正在截图…' });
+    setLastResult(null);
+    setLastFailedMode(null);
     try {
       const type = m === 'visible' ? 'CAPTURE_VISIBLE' : 'CAPTURE_FULLPAGE';
       const result = await request<CaptureResult>({
@@ -141,8 +207,14 @@ export default function App() {
         payload: { tabId: tabId!, config },
       });
       setStatus(captureStatus(result));
+      if (result.ok) {
+        setLastResult(result);
+      } else if (!result.cancelled) {
+        setLastFailedMode(m); // 失败可一键重试（B2）
+      }
     } catch (e) {
-      setStatus({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      setStatus({ kind: 'err', text: friendlyError(e instanceof Error ? e.message : String(e)) });
+      setLastFailedMode(m);
     } finally {
       setBusy(false);
       setActiveJob(null);
@@ -177,7 +249,7 @@ export default function App() {
       });
       setStatus(batchStatus(result));
     } catch (e) {
-      setStatus({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      setStatus({ kind: 'err', text: friendlyError(e instanceof Error ? e.message : String(e)) });
     } finally {
       setBusy(false);
       setActiveJob(null);
@@ -197,7 +269,7 @@ export default function App() {
       });
       setStatus(batchStatus(result));
     } catch (e) {
-      setStatus({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      setStatus({ kind: 'err', text: friendlyError(e instanceof Error ? e.message : String(e)) });
     } finally {
       setBusy(false);
       setActiveJob(null);
@@ -224,6 +296,55 @@ export default function App() {
     }
   }
 
+  /** 预览单张成功结果：dataURL → Blob → 临时记录（B3） */
+  async function previewResult(result: CaptureResult): Promise<void> {
+    if (!result.dataUrl) return;
+    try {
+      const imageBlob = await dataUrlToBlob(result.dataUrl);
+      setPreview({
+        id: 'temp',
+        fileName: result.fileName ?? '截图.png',
+        url: result.url ?? '',
+        title: result.title ?? '',
+        mode: result.mode,
+        format: result.format ?? config.format,
+        createdAt: Date.now(),
+        sizeBytes: imageBlob.size,
+        thumbBlob: imageBlob,
+        imageBlob,
+      });
+    } catch (e) {
+      pushToast('err', `预览失败：${friendlyError(e instanceof Error ? e.message : String(e))}`);
+    }
+  }
+
+  /** 复制单张成功结果到剪贴板（B4，能力探测 + 降级提示） */
+  async function copyResult(result: CaptureResult): Promise<void> {
+    if (!result.dataUrl) {
+      pushToast('err', '无图片数据可复制');
+      return;
+    }
+    try {
+      const blob = await dataUrlToBlob(result.dataUrl);
+      const res = await copyImageToClipboard(blob);
+      if (res.ok) pushToast('ok', '已复制到剪贴板');
+      else if (res.reason === 'unsupported')
+        pushToast('warn', '当前浏览器不支持复制图片，请改用「预览 → 另存为」');
+      else pushToast('err', '复制失败，请重试');
+    } catch (e) {
+      pushToast('err', '复制失败，请重试');
+    }
+  }
+
+  /** 打开下载项所在文件夹（B3，依赖 downloadId） */
+  async function openFolder(downloadId: number): Promise<void> {
+    try {
+      await browser.downloads.show(downloadId);
+    } catch (e) {
+      pushToast('err', '打开文件夹失败，请前往浏览器下载目录查看');
+    }
+  }
+
   async function handlePreview(item: ScreenshotListItem): Promise<void> {
     try {
       const record = await request<ScreenshotRecord>({
@@ -232,7 +353,7 @@ export default function App() {
       });
       setPreview(record);
     } catch (e) {
-      setStatus({ kind: 'err', text: e instanceof Error ? e.message : String(e) });
+      setStatus({ kind: 'err', text: friendlyError(e instanceof Error ? e.message : String(e)) });
     }
   }
 
@@ -264,6 +385,10 @@ export default function App() {
         : status.kind === 'warn'
           ? 'status-warn'
           : 'muted';
+
+  // 成功结果展示快捷操作（预览/复制/打开文件夹，B3）
+  const showQuickActions =
+    lastResult != null && (status?.kind === 'ok' || status?.kind === 'warn');
 
   return (
     <div>
@@ -299,13 +424,22 @@ export default function App() {
           <ModeSelector value={mode} availability={availability} onChange={setMode} />
 
           <button
-            className="primary block capture-btn"
+            className={`primary block capture-btn${busy ? ' loading' : ''}`}
             disabled={busy || !availability[mode]}
             onClick={startCapture}
           >
-            {mode === 'visible' && '📸 截取可见区域'}
-            {mode === 'area' && '🔲 选定区域'}
-            {mode === 'fullpage' && '📜 整页滚动截图'}
+            {busy ? (
+              <>
+                <span className="spinner spinner-light" aria-hidden="true" />
+                {loadingLabel(progress)}
+              </>
+            ) : (
+              <>
+                {mode === 'visible' && '📸 截取可见区域'}
+                {mode === 'area' && '🔲 选定区域'}
+                {mode === 'fullpage' && '📜 整页滚动截图'}
+              </>
+            )}
           </button>
 
           <BatchPanel
@@ -318,6 +452,24 @@ export default function App() {
           />
 
           {status && <p className={`status-line ${statusClass}`}>{status.text}</p>}
+
+          {/* 失败一键重试（B2） */}
+          {status?.kind === 'err' && lastFailedMode && !busy && (
+            <button className="block retry-btn" onClick={() => void onCapture(lastFailedMode)}>
+              ↻ 重试
+            </button>
+          )}
+
+          {/* 成功后快捷操作（B3） */}
+          {showQuickActions && (
+            <div className="quick-actions">
+              <button onClick={() => void previewResult(lastResult!)}>🖼 预览</button>
+              <button onClick={() => void copyResult(lastResult!)}>📋 复制</button>
+              {lastResult!.downloadId != null && (
+                <button onClick={() => void openFolder(lastResult!.downloadId!)}>📁 打开文件夹</button>
+              )}
+            </div>
+          )}
 
           <ProgressBar progress={progress} busy={busy} />
 
@@ -337,7 +489,18 @@ export default function App() {
         <HistoryList onPreview={(item) => void handlePreview(item)} onCountChange={setHistoryCount} />
       )}
 
-      {preview && <PreviewModal record={preview} onClose={() => setPreview(null)} />}
+      {preview && (
+        <PreviewModal record={preview} onClose={() => setPreview(null)} onToast={pushToast} />
+      )}
+
+      {/* 轻量 toast 堆叠（C2） */}
+      <div className="toast-stack">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast toast-${t.kind}`}>
+            {t.text}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

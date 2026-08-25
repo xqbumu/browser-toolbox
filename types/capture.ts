@@ -87,6 +87,8 @@ export interface CaptureResult {
   downloadFailed?: boolean;
   /** 下载失败原因（A2） */
   downloadError?: string;
+  /** 下载成功时的 downloadId（B3，popup「打开文件夹」用 browser.downloads.show） */
+  downloadId?: number;
 }
 
 /** 批量截图汇总 */
@@ -100,4 +102,6 @@ export interface BatchResult {
   /** Zip 打包下载失败（A2） */
   downloadFailed?: boolean;
   downloadError?: string;
+  /** 被跳过的不可截取项数量（B6，如 chrome:// 受保护选项卡） */
+  skipped?: number;
 }

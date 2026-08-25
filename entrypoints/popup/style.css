@@ -145,16 +145,62 @@ textarea:focus {
   color: #ad6800;
 }
 
-/* 状态提示（无独立卡片，紧凑单行） */
+/* 状态提示（无独立卡片，紧凑单行；淡入过渡 C2） */
 .status-line {
   margin: 4px 2px;
   font-size: 12px;
   word-break: break-all;
+  animation: __wxt-fade-in 0.25s ease-out;
+}
+
+@keyframes __wxt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 主截图按钮（紧跟模式分段控件） */
 .capture-btn {
   margin-bottom: 8px;
+}
+
+/* busy 时主按钮呼吸动效（C2） */
+.capture-btn.loading {
+  animation: __wxt-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes __wxt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.82;
+  }
+}
+
+/* 失败一键重试（B2） */
+.retry-btn {
+  margin: 4px 0 8px;
+  font-weight: 600;
+}
+
+/* 成功后快捷操作（B3） */
+.quick-actions {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 8px;
+  flex-wrap: wrap;
+}
+
+.quick-actions button {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .settings-link {
@@ -271,7 +317,27 @@ textarea:focus {
   height: 100%;
   background: var(--primary);
   border-radius: 5px;
-  transition: width 0.2s;
+  transition: width 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 进度条尾端微光扫过动效（C2） */
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: __wxt-shimmer 1.4s linear infinite;
+}
+
+@keyframes __wxt-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
 }
 
 /* 取消按钮（busy 时显示，A5） */
@@ -298,6 +364,17 @@ textarea:focus {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 主按钮内 spinner（浅色底，用于 primary 深色按钮） */
+.spinner-light {
+  border-color: rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+}
+
+/* 批量重试项（B1） */
+.retrying {
+  color: #ad6800;
 }
 
 .fail-list {
@@ -518,11 +595,76 @@ textarea:focus {
   padding: 10px;
   text-align: center;
   background: #eef0f3;
+  cursor: grab; /* C1：按住拖拽平移 */
+  touch-action: none; /* 防止移动端滚动手势干扰拖拽 */
+}
+
+.preview-body.dragging {
+  cursor: grabbing;
 }
 
 .preview-body img {
   max-width: 100%;
   transform-origin: center center;
-  transition: transform 0.15s;
   display: inline-block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 轻量 toast 堆叠（C2）：顶部固定，可多条堆叠，自动淡入 */
+.toast-stack {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-all;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  animation: __wxt-toast-in 0.2s ease-out;
+}
+
+.toast-ok {
+  background: #e8f7ee;
+  border: 1px solid #b7e4c7;
+  color: #16a34a;
+}
+
+.toast-err {
+  background: #fdecec;
+  border: 1px solid #f5c2c2;
+  color: var(--danger);
+}
+
+.toast-warn {
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #ad6800;
+}
+
+.toast-info {
+  background: #eaf1ff;
+  border: 1px solid #b8d0ff;
+  color: var(--primary);
+}
+
+@keyframes __wxt-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

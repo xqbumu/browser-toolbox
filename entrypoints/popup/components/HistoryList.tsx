@@ -65,6 +65,8 @@ export function HistoryList({ onPreview, onCountChange }: Props) {
   }
 
   async function handleDelete(id: string): Promise<void> {
+    // C2：单条删除加确认（撤销需保留被删记录、实现成本高，退化为 confirm）
+    if (!window.confirm('确定删除这条截图记录？此操作不可恢复。')) return;
     try {
       await request<{ deleted: string }>({ type: 'HISTORY_DELETE', payload: { id } });
       await load();

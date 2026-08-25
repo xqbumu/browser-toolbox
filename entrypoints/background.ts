@@ -85,10 +85,15 @@ async function handleRequest(
       return { ok: true, data: lastProgress };
 
     case 'CAPTURE_VISIBLE': {
-      const result = await service.captureVisible(msg.payload.tabId, msg.payload.config);
-      await maybeDownload(result, msg.payload.config);
-      await recordHistory(result, msg.payload.config);
-      return { ok: true, data: result };
+      try {
+        const result = await service.captureVisible(msg.payload.tabId, msg.payload.config);
+        await maybeDownload(result, msg.payload.config);
+        await recordHistory(result, msg.payload.config);
+        return { ok: true, data: result };
+      } finally {
+        // B5：单张任务完成即清理进度快照，避免 popup 重开误判「进行中」
+        lastProgress = null;
+      }
     }
 
     case 'CAPTURE_FULLPAGE': {
@@ -106,23 +111,30 @@ async function handleRequest(
         return { ok: true, data: result };
       } finally {
         cancelFlags.delete(key);
+        // B5：单张任务完成即清理进度快照（stage 事件不留残余）
+        lastProgress = null;
       }
     }
 
     case 'CAPTURE_AREA': {
-      // rect 为空表示需先进入选区模式；否则直接按给定 rect 裁剪
-      let rect = msg.payload.rect;
-      if (rect.width <= 0 || rect.height <= 0) {
-        const selected = await startSelection(msg.payload.tabId);
-        if (!selected.ok) return { ok: false, error: selected.error };
-        rect = selected.data;
+      try {
+        // rect 为空表示需先进入选区模式；否则直接按给定 rect 裁剪
+        let rect = msg.payload.rect;
+        if (rect.width <= 0 || rect.height <= 0) {
+          const selected = await startSelection(msg.payload.tabId);
+          if (!selected.ok) return { ok: false, error: selected.error };
+          rect = selected.data;
+        }
+        const result = await service.captureArea(msg.payload.tabId, rect, msg.payload.config);
+        await maybeDownload(result, msg.payload.config);
+        await recordHistory(result, msg.payload.config);
+        // A3：选区完成后向页面回显结果（取消场景已在 startSelection 提前返回，不会重复）
+        await notifyAreaResult(msg.payload.tabId, result);
+        return { ok: true, data: result };
+      } finally {
+        // B5：单张任务完成即清理进度快照（选区取消/失败提前 return 也走 finally）
+        lastProgress = null;
       }
-      const result = await service.captureArea(msg.payload.tabId, rect, msg.payload.config);
-      await maybeDownload(result, msg.payload.config);
-      await recordHistory(result, msg.payload.config);
-      // A3：选区完成后向页面回显结果（取消场景已在 startSelection 提前返回，不会重复）
-      await notifyAreaResult(msg.payload.tabId, result);
-      return { ok: true, data: result };
     }
 
     case 'BATCH_TABS': {
@@ -219,7 +231,9 @@ async function maybeDownload(result: CaptureResult, config: CaptureConfig): Prom
   if (result.ok && result.dataUrl && result.fileName) {
     try {
       const path = resolveDownloadPath(config.saveSubfolder, result.fileName);
-      await downloadDataUrl(result.dataUrl, path);
+      const id = await downloadDataUrl(result.dataUrl, path);
+      // B3：记录 downloadId，供 popup「打开文件夹」调用 browser.downloads.show
+      result.downloadId = id;
       // 成功：downloadFailed 保持 undefined（=false 语义）
     } catch (e) {
       result.downloadFailed = true;

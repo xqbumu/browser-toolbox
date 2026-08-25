@@ -63,6 +63,31 @@ export function genId(): string {
   return `id_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * 估算批量剩余耗时（ms）：平均单页耗时 × 剩余页数（B1）。
+ * 无法估算（无已完成项 / 已完成已覆盖全部）时返回 null，由调用方决定是否展示。
+ * @param elapsedMs 已耗时（ms）
+ * @param completed 已完成项数量
+ * @param total 总项数
+ */
+export function estimateRemainingMs(
+  elapsedMs: number,
+  completed: number,
+  total: number,
+): number | null {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return null;
+  if (!Number.isFinite(completed) || completed <= 0) return null;
+  if (!Number.isFinite(total) || total <= completed) return null;
+  const avg = elapsedMs / completed;
+  return Math.max(0, Math.round(avg * (total - completed)));
+}
+
+/** 毫秒 → 秒字符串（四舍五入到整数秒），用于「已耗时 Xs · 剩余约 Ys」展示 */
+export function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return `${s}s`;
+}
+
 /** 读取单个 tab 信息（browser.tabs.get 为通用 API，无跨浏览器差异） */
 export async function fetchTabInfo(tabId: number): Promise<TabInfo> {
   const tab = await browser.tabs.get(tabId);
