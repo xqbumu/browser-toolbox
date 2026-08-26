@@ -4,6 +4,16 @@
  * C1：增加滚轮缩放、按住拖拽平移、双击复位，工具栏加「📋 复制图片」「💾 另存为」。
  */
 import { useEffect, useRef, useState } from 'react';
+import { Button } from 'tdesign-react';
+import {
+  AddCircleIcon,
+  CloseIcon,
+  CopyIcon,
+  DownloadIcon,
+  BrowseIcon,
+  MinusCircleIcon,
+  RefreshIcon,
+} from 'tdesign-icons-react';
 import type { ScreenshotRecord } from '@/types/history';
 import type { ToastKind } from '@/types/messages';
 import { copyImageToClipboard } from '@/utils/clipboard';
@@ -125,15 +135,13 @@ export function PreviewModal({ record, onClose, onToast }: Props) {
     <div className="preview-overlay" onClick={onClose}>
       <div className="preview-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="preview-toolbar">
-          <button onClick={() => setScale((s) => clampScale(s + STEP))}>放大</button>
-          <button onClick={() => setScale((s) => clampScale(s - STEP))}>缩小</button>
-          <button onClick={resetView}>复位</button>
-          <button onClick={() => void copyImage()}>📋 复制图片</button>
-          <button onClick={() => void saveAs()}>💾 另存为</button>
-          <button onClick={openInNewTab}>在新标签页打开</button>
-          <button className="danger" onClick={onClose}>
-            关闭
-          </button>
+          <Button size="small" variant="text" icon={<AddCircleIcon />} onClick={() => setScale((v) => clampScale(v + STEP))} />
+          <Button size="small" variant="text" icon={<MinusCircleIcon />} onClick={() => setScale((v) => clampScale(v - STEP))} />
+          <Button size="small" variant="text" icon={<RefreshIcon />} title="复位" onClick={resetView} />
+          <Button size="small" variant="text" icon={<CopyIcon />} title="复制图片" onClick={() => void copyImage()} />
+          <Button size="small" variant="text" icon={<DownloadIcon />} title="另存为" onClick={() => void saveAs()} />
+          <Button size="small" variant="text" icon={<BrowseIcon />} title="在新标签页打开" onClick={openInNewTab} />
+          <Button size="small" variant="text" theme="danger" icon={<CloseIcon />} onClick={onClose} />
         </div>
         <div
           ref={bodyRef}

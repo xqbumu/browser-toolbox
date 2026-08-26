@@ -1,15 +1,13 @@
 /**
  * 进度与结果展示组件：
- * 展示整页分阶段进度（stage：preparing/waiting/scrolling/stitching）、
- * 批量进度（已完成项推进 + 重试提示 + 已耗时/剩余估计）与最终汇总（含取消/下载失败/跳过提示）。
- *
- * B1：批量进度以「已完成项」推进（start=0%、item 用 (index-1)/total、done=100%），
- *     重试项用「↻ 重试：label」样式区分，并展示「已耗时 Xs · 剩余约 Ys」。
+ * 展示整页分阶段进度（stage）、批量进度（B1：已完成项推进 + 重试提示 + 耗时/剩余估计）
+ * 与最终汇总（含取消/下载失败/跳过提示）。进度条统一使用 TDesign Progress。
  */
-import { useEffect, useRef, useState } from 'react';
-import type { ProgressEvent } from '@/types/messages';
-import type { BatchResult } from '@/types/capture';
-import { estimateRemainingMs, formatDuration } from '@/utils/helpers';
+import { useEffect, useRef, useState } from "react";
+import { Loading, Progress } from "tdesign-react";
+import type { ProgressEvent } from "@/types/messages";
+import type { BatchResult } from "@/types/capture";
+import { estimateRemainingMs, formatDuration } from "@/utils/helpers";
 
 interface Props {
   progress: ProgressEvent | null;
@@ -17,11 +15,11 @@ interface Props {
 }
 
 export function ProgressBar({ progress, busy }: Props) {
-  const item = progress?.kind === 'item' ? progress : null;
-  const start = progress?.kind === 'start' ? progress : null;
-  const stage = progress?.kind === 'stage' ? progress : null;
-  const cancelled = progress?.kind === 'cancelled' ? progress : null;
-  const done = progress?.kind === 'done' ? progress.result : null;
+  const item = progress?.kind === "item" ? progress : null;
+  const start = progress?.kind === "start" ? progress : null;
+  const stage = progress?.kind === "stage" ? progress : null;
+  const cancelled = progress?.kind === "cancelled" ? progress : null;
+  const done = progress?.kind === "done" ? progress.result : null;
 
   // B1：start 事件到达时记录时间戳，供「已耗时/剩余」计算
   const startAtRef = useRef<number | null>(null);
@@ -42,43 +40,42 @@ export function ProgressBar({ progress, busy }: Props) {
 
   // 批量进度：已完成项 = index - 1（首项到达仍为 0%，末项完成→done→100%）
   const completed = item ? Math.max(0, item.index - 1) : 0;
-  const batchPercent = item && total > 0 ? Math.round((completed / total) * 100) : 0;
+  const batchPercent =
+    item && total > 0 ? Math.round((completed / total) * 100) : 0;
 
   // 整页 stage(scrolling) 进度：已完成分片 = current
-  const stagePercent = stage && total > 0 ? Math.round(((stage.current ?? 0) / total) * 100) : 0;
+  const stagePercent =
+    stage && total > 0 ? Math.round(((stage.current ?? 0) / total) * 100) : 0;
 
   // 已耗时 / 剩余估计（仅批量 item 阶段展示）
-  const elapsedMs = startAtRef.current != null ? Date.now() - startAtRef.current : null;
+  const elapsedMs =
+    startAtRef.current != null ? Date.now() - startAtRef.current : null;
   const remainingMs =
-    item && elapsedMs != null ? estimateRemainingMs(elapsedMs, completed, total) : null;
+    item && elapsedMs != null
+      ? estimateRemainingMs(elapsedMs, completed, total)
+      : null;
 
   if (!busy && !done && !item && !stage && !cancelled) return null;
 
   return (
-    <div className="card">
-      <p className="card-title">进度</p>
-
+    <div className="progress-block">
       {/* 整页分阶段进度（A1） */}
       {stage && busy && (
         <div className="stage-line">
-          {stage.phase === 'scrolling' && total > 0 ? (
+          {stage.phase === "scrolling" && total > 0 ? (
             <>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${stagePercent}%` }} />
-              </div>
-              <p className="muted" style={{ marginTop: 6 }}>
+              <Progress percentage={stagePercent} />
+              <p className="muted progress-caption">
                 {stage.label} · {stage.current}/{total}
               </p>
             </>
           ) : (
-            <p className="muted" style={{ marginTop: 0 }}>
-              <span className="spinner" aria-hidden="true" /> {stage.label}
-            </p>
+            <Loading loading size="small" text={stage.label}>
+              <span className="muted">　</span>
+            </Loading>
           )}
           {stage.warning && (
-            <p className="status-warn" style={{ marginTop: 4 }}>
-              ⚠️ {stage.warning}
-            </p>
+            <p className="status-warn progress-caption">⚠️ {stage.warning}</p>
           )}
         </div>
       )}
@@ -86,20 +83,20 @@ export function ProgressBar({ progress, busy }: Props) {
       {/* 批量进度条（start/item） */}
       {busy && !stage && total > 0 && (
         <>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${batchPercent}%` }} />
-          </div>
-          <p className="muted" style={{ marginTop: 6 }}>
+          <Progress percentage={batchPercent} />
+          <p className="muted progress-caption">
             {item?.retrying ? (
               <span className="retrying">↻ 重试：{item.label}</span>
             ) : (
-              `${item ? item.index : 0}/${total} · ${item?.label ?? '准备中…'}`
+              `${item ? item.index : 0}/${total} · ${item?.label ?? "准备中…"}`
             )}
           </p>
           {item && elapsedMs != null && (
-            <p className="muted" style={{ marginTop: 2 }}>
+            <p className="muted progress-caption">
               已耗时 {formatDuration(elapsedMs)}
-              {remainingMs != null ? ` · 剩余约 ${formatDuration(remainingMs)}` : ''}
+              {remainingMs != null
+                ? ` · 剩余约 ${formatDuration(remainingMs)}`
+                : ""}
             </p>
           )}
         </>
@@ -107,9 +104,9 @@ export function ProgressBar({ progress, busy }: Props) {
 
       {/* 无具体进度时的兜底提示 */}
       {busy && !stage && total === 0 && (
-        <p className="muted" style={{ marginTop: 0 }}>
-          <span className="spinner" aria-hidden="true" /> 准备中…
-        </p>
+        <Loading loading size="small" text="准备中…">
+          <span className="muted">　</span>
+        </Loading>
       )}
 
       {/* 取消提示（A5） */}
@@ -122,21 +119,23 @@ export function ProgressBar({ progress, busy }: Props) {
 
 function BatchSummary({ result }: { result: BatchResult }) {
   return (
-    <div>
+    <div className="batch-summary">
       {result.cancelled && <p className="status-warn">已取消批量截图</p>}
       <p>
         完成：<span className="status-ok">成功 {result.success}</span>
-        {' · '}
-        <span className={result.failed > 0 ? 'status-err' : 'muted'}>失败 {result.failed}</span>
+        {" · "}
+        <span className={result.failed > 0 ? "status-err" : "muted"}>
+          失败 {result.failed}
+        </span>
       </p>
       {result.skipped != null && result.skipped > 0 && (
-        <p className="muted" style={{ marginTop: 4 }}>
+        <p className="muted progress-caption">
           已跳过 {result.skipped} 个不可截取的选项卡（chrome:// 等受保护页面）
         </p>
       )}
       {result.downloadFailed && (
-        <p className="status-warn" style={{ marginTop: 4 }}>
-          ⚠️ 打包下载失败：{result.downloadError ?? ''}
+        <p className="status-warn progress-caption">
+          ⚠️ 打包下载失败：{result.downloadError ?? ""}
         </p>
       )}
       {result.failed > 0 && (

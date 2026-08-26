@@ -1,13 +1,4 @@
-:root {
-  --bg: #f6f7f9;
-  --card: #ffffff;
-  --border: #e3e6ea;
-  --text: #1f2329;
-  --text-dim: #6b7280;
-  --primary: #4f8cff;
-  --primary-hover: #3b78f0;
-  --danger: #e5484d;
-}
+/* Options 页布局：控件视觉统一由 TDesign 提供。 */
 
 * {
   box-sizing: border-box;
@@ -15,121 +6,102 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
-  color: var(--text);
-  background: var(--bg);
+  padding: 24px;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  color: #1f2329;
+  background: #f6f7f9;
 }
 
 .options-page {
   max-width: 560px;
   margin: 0 auto;
-  padding: 24px 20px 48px;
 }
 
 h1 {
-  font-size: 20px;
-  margin: 0 0 20px;
-}
-
-h2 {
-  font-size: 15px;
-  margin: 0 0 12px;
-  color: var(--text-dim);
+  font-size: 17px;
+  margin: 0 0 16px;
 }
 
 section {
-  background: var(--card);
-  border: 1px solid var(--border);
+  background: #fff;
+  border: 1px solid #eef0f3;
   border-radius: 10px;
-  padding: 16px 18px;
-  margin-bottom: 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
 }
 
-.field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.field:last-of-type {
-  border-bottom: none;
-}
-
-.field span {
-  color: var(--text-dim);
-  font-size: 13px;
-}
-
-input[type='number'],
-input[type='text'],
-select {
-  width: 140px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font: inherit;
-  color: var(--text);
-}
-
-input[type='number']:focus,
-input[type='text']:focus,
-select:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-.hint {
-  margin: 10px 0 0;
-  font-size: 12px;
-  color: var(--text-dim);
-  line-height: 1.6;
-}
-
-.checkbox {
+h2 {
+  font-size: 14px;
+  margin: 0 0 12px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
-  cursor: pointer;
+}
+h2::before {
+  content: "";
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--td-brand-color, #0052d9);
 }
 
-.actions {
+.options-page .t-tabs {
+  margin-bottom: 16px;
+}
+
+.import-box {
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.import-box h3 {
+  margin-top: 0;
+}
+
+.rule-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.rule-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.rule-row.disabled .rule-name {
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+.rule-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.rule-name {
+  font-weight: 500;
+}
+.rule-sub {
+  font-size: 12px;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rule-ops {
+  display: flex;
+  gap: 2px;
 }
 
-button {
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 8px 20px;
-  font-size: 14px;
-  cursor: pointer;
+/* 编辑器卡片内动作行 hover 反馈 */
+.action-row:hover {
+  border-color: #d9dde3;
 }
 
-button.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
-}
-
-button.primary:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-}
-
-.saved {
-  color: var(--primary);
-}
-
-.error {
-  color: var(--danger);
-  margin-top: 12px;
+.field .t-input-number {
+  width: 180px;
 }
