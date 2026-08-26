@@ -1,11 +1,14 @@
 /**
  * 历史列表组件：倒序展示截图记录（缩略图 / 文件名 / 时间 / 域名），
  * 支持客户端搜索、单条删除、清空、预览、重新下载；加载后回传条数供 Tab 角标展示。
+ * 破坏性操作统一使用受控 ConfirmDialog（声明式，popup 环境可靠）。
  */
 import { useEffect, useMemo, useState } from "react";
-import { Button, DialogPlugin, Input } from "tdesign-react";
+import { Button, Input } from "tdesign-react";
+import { AppIcon, BrowseIcon } from "tdesign-icons-react";
 import type { ScreenshotListItem } from "@/types/history";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
+import { ConfirmDialog, EmptyState } from "@/ui/kit";
 
 /** 向 background 发送请求并解包响应 */
 async function request<T>(msg: PopupRequest): Promise<T> {
@@ -19,11 +22,15 @@ interface Props {
   onCountChange: (count: number) => void;
 }
 
+/** 确认意图：清空 / 删除单条 */
+type ConfirmIntent = { type: "clear" } | { type: "delete"; id: string } | null;
+
 export function HistoryList({ onPreview, onCountChange }: Props) {
   const [items, setItems] = useState<ScreenshotListItem[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmIntent>(null);
 
   async function load(): Promise<void> {
     setLoading(true);
@@ -56,20 +63,6 @@ export function HistoryList({ onPreview, onCountChange }: Props) {
     );
   }, [items, query]);
 
-  function handleClear(): void {
-    const dialog = DialogPlugin.confirm({
-      header: "清空历史",
-      body: "确定清空全部截图历史？此操作不可恢复。",
-      confirmBtn: { content: "清空", theme: "danger" },
-      cancelBtn: "取消",
-      onConfirm: () => {
-        dialog.destroy();
-        void doClear();
-      },
-      onClose: () => dialog.destroy(),
-    });
-  }
-
   async function doClear(): Promise<void> {
     try {
       const { cleared } = await request<{ cleared: number }>({
@@ -81,21 +74,6 @@ export function HistoryList({ onPreview, onCountChange }: Props) {
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     }
-  }
-
-  async function handleDelete(id: string): Promise<void> {
-    // C2：单条删除加确认（撤销需保留被删记录、实现成本高，退化为对话框确认）
-    const dialog = DialogPlugin.confirm({
-      header: "删除记录",
-      body: "确定删除这条截图记录？此操作不可恢复。",
-      confirmBtn: { content: "删除", theme: "danger" },
-      cancelBtn: "取消",
-      onConfirm: () => {
-        dialog.destroy();
-        void doDelete(id);
-      },
-      onClose: () => dialog.destroy(),
-    });
   }
 
   async function doDelete(id: string): Promise<void> {
@@ -133,10 +111,23 @@ export function HistoryList({ onPreview, onCountChange }: Props) {
           onChange={(v) => setQuery(String(v ?? ""))}
         />
         <Button
+          shape="square"
+          variant="text"
+          theme="default"
+          title="在新标签页打开历史管理"
+          onClick={() =>
+            void browser.tabs.create({
+              url: browser.runtime.getURL("/history.html"),
+            })
+          }
+        >
+          <AppIcon />
+        </Button>
+        <Button
           theme="danger"
           variant="text"
           disabled={items.length === 0}
-          onClick={handleClear}
+          onClick={() => setConfirm({ type: "clear" })}
         >
           清空
         </Button>
@@ -147,7 +138,10 @@ export function HistoryList({ onPreview, onCountChange }: Props) {
       {loading && <p className="muted">加载中…</p>}
 
       {!loading && filtered.length === 0 && (
-        <p className="history-empty">暂无截图记录</p>
+        <EmptyState
+          icon={<BrowseIcon />}
+          title={query ? "没有匹配的截图" : "暂无截图记录"}
+        />
       )}
 
       {!loading && filtered.length > 0 && (
@@ -157,12 +151,29 @@ export function HistoryList({ onPreview, onCountChange }: Props) {
               key={it.id}
               item={it}
               onPreview={onPreview}
-              onDelete={(id) => void handleDelete(id)}
+              onDelete={(id) => setConfirm({ type: "delete", id })}
               onRedownload={(id) => void handleRedownload(id)}
             />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirm != null}
+        header={confirm?.type === "clear" ? "清空历史" : "删除记录"}
+        body={
+          confirm?.type === "clear"
+            ? "确定清空全部截图历史？此操作不可恢复。"
+            : "确定删除这条截图记录？此操作不可恢复。"
+        }
+        confirmText={confirm?.type === "clear" ? "清空" : "删除"}
+        danger
+        onConfirm={() => {
+          if (confirm?.type === "clear") void doClear();
+          else if (confirm) void doDelete(confirm.id);
+        }}
+        onClose={() => setConfirm(null)}
+      />
     </div>
   );
 }
@@ -236,10 +247,10 @@ function Thumb({ blob }: { blob: Blob }) {
 
 /** 时间戳 → YYYY-MM-DD HH:mm */
 function formatTime(ms: number): string {
-  const d = new Date(ms);
+  const t = new Date(ms);
   const p = (n: number): string => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
-    d.getMinutes(),
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(
+    t.getMinutes(),
   )}`;
 }
 

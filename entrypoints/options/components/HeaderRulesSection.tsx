@@ -6,7 +6,7 @@
  * 写操作统一走 background 消息，保证引擎即时同步。
  */
 import { useEffect, useState } from "react";
-import { Button, DialogPlugin, MessagePlugin, Switch } from "tdesign-react";
+import { Button, MessagePlugin, Switch } from "tdesign-react";
 import {
   newHeaderRule,
   validateHeaderRule,
@@ -16,6 +16,7 @@ import type { PopupRequest, PopupResponse } from "@/types/messages";
 import { genId } from "@/utils/helpers";
 import { HeaderRuleEditor } from "@/ui/HeaderRuleEditor";
 import { HeaderImportExport } from "@/ui/HeaderImportExport";
+import { ConfirmDialog } from "@/ui/kit";
 
 async function request<T>(msg: PopupRequest): Promise<T> {
   const res = (await browser.runtime.sendMessage(msg)) as PopupResponse<T>;
@@ -59,23 +60,11 @@ export function HeaderRulesSection() {
     }
   }
 
-  function remove(id: string): void {
-    const dialog = DialogPlugin.confirm({
-      header: "删除规则",
-      body: "确定删除该规则？",
-      confirmBtn: { content: "删除", theme: "danger" },
-      cancelBtn: "取消",
-      onConfirm: () => {
-        dialog.destroy();
-        void (async () => {
-          await request({ type: "HEADERS_DELETE", payload: { id } }).catch(
-            () => {},
-          );
-          await reload();
-        })();
-      },
-      onClose: () => dialog.destroy(),
-    });
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  async function performRemove(id: string): Promise<void> {
+    await request({ type: "HEADERS_DELETE", payload: { id } }).catch(() => {});
+    await reload();
   }
 
   function startCreate(): void {
@@ -153,7 +142,7 @@ export function HeaderRulesSection() {
               </button>
               <button
                 className="danger-text"
-                onClick={() => void remove(rule.id)}
+                onClick={() => setDeleteId(rule.id)}
               >
                 删除
               </button>
@@ -165,6 +154,19 @@ export function HeaderRulesSection() {
       {rules.length === 0 && !editing && (
         <p className="hint">暂无规则。新建后即可对匹配请求改写请求/响应头。</p>
       )}
+
+      <ConfirmDialog
+        open={deleteId != null}
+        header="删除规则"
+        body="确定删除该规则？"
+        confirmText="删除"
+        danger
+        onConfirm={() => {
+          if (deleteId) void performRemove(deleteId);
+          setDeleteId(null);
+        }}
+        onClose={() => setDeleteId(null)}
+      />
     </div>
   );
 }

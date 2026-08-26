@@ -90,7 +90,8 @@ export type PopupRequest =
   | { type: "SET_CONFIG"; payload: Partial<CaptureConfig> }
   | { type: "HISTORY_LIST"; payload: Record<string, never> } // 返回 ScreenshotListItem[]
   | { type: "HISTORY_GET"; payload: { id: string } } // 返回 ScreenshotRecord（含原图）
-  | { type: "HISTORY_DELETE"; payload: { id: string } } // 删除单条
+  | { type: "HISTORY_DELETE"; payload: { id: string } }
+  | { type: "HISTORY_DELETE_MANY"; payload: { ids: string[] } } // 批量删除（历史页多选） // 删除单条
   | { type: "HISTORY_CLEAR"; payload: Record<string, never> } // 清空
   | { type: "HISTORY_REDOWNLOAD"; payload: { id: string } } // 重新下载原图
   // ---- 请求头改写（工具箱第二个工具） ----

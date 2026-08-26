@@ -10,6 +10,7 @@ import { genId } from "@/utils/helpers";
 const log = createLogger("header-rules-store");
 
 const STORAGE_KEY = "headerRules";
+const MASTER_KEY = "headerEnabled";
 
 /** 规则变更推送包裹结构 */
 export interface HeaderRulesChangedPush {
@@ -92,4 +93,17 @@ export async function importHeaderRules(
   const map = new Map(current.map((r) => [r.id, r]));
   for (const rule of incoming) map.set(rule.id, rule);
   return writeAll([...map.values()]);
+}
+
+// ---- 全局总开关（Requestly 式：关闭后引擎应用空规则集，规则数据保留） ----
+
+export async function isHeaderMasterEnabled(): Promise<boolean> {
+  const result = await browser.storage.local.get(MASTER_KEY);
+  // 缺省视为开启（首次安装即开箱可用）
+  return result[MASTER_KEY] !== false;
+}
+
+export async function setHeaderMasterEnabled(enabled: boolean): Promise<void> {
+  await browser.storage.local.set({ [MASTER_KEY]: enabled });
+  broadcastChanged();
 }

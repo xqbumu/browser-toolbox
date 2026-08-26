@@ -5,22 +5,20 @@
  * - 导入/导出仍留在 options 管理页，popup 底部提供跳转。
  */
 import { useEffect, useState } from "react";
-import {
-  Button,
-  DialogPlugin,
-  MessagePlugin,
-  Switch,
-  Tag,
-} from "tdesign-react";
+import { Button, MessagePlugin, Switch, Tag } from "tdesign-react";
 import type { HeaderRule } from "@/types/headers";
 import { newHeaderRule } from "@/types/headers";
-import { FilterIcon, SettingIcon } from "tdesign-icons-react";
+import { FilterIcon } from "tdesign-icons-react";
+import { ConfirmDialog, EmptyState } from "@/ui/kit";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
 import { conditionMatches } from "@/core/headers/match";
 import { detectHeaderEngine } from "@/core/headers/engine";
+import {
+  isHeaderMasterEnabled,
+  setHeaderMasterEnabled,
+} from "@/utils/header-rules-store";
 import { genId } from "@/utils/helpers";
 import { HeaderRuleEditor } from "@/ui/HeaderRuleEditor";
-import { HeaderImportExport } from "@/ui/HeaderImportExport";
 
 async function request<T>(msg: PopupRequest): Promise<T> {
   const res = (await browser.runtime.sendMessage(msg)) as PopupResponse<T>;
@@ -51,7 +49,7 @@ export function HeadersTool(): React.ReactNode {
   const [engineAvailable] = useState(() => detectHeaderEngine() != null);
   const [tabUrl, setTabUrl] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "edit">("list");
-  const [showIO, setShowIO] = useState(false);
+  const [masterOn, setMasterOn] = useState(true);
   const [editing, setEditing] = useState<HeaderRule | null>(null);
 
   useEffect(() => {
@@ -73,6 +71,16 @@ export function HeadersTool(): React.ReactNode {
     })();
   }, []);
 
+  async function toggleMaster(on: boolean): Promise<void> {
+    const prev = masterOn;
+    setMasterOn(on);
+    try {
+      await setHeaderMasterEnabled(on);
+    } catch {
+      setMasterOn(prev);
+    }
+  }
+
   function flash(text: string): void {
     void MessagePlugin.success({ content: text, duration: 2000 });
   }
@@ -88,25 +96,15 @@ export function HeadersTool(): React.ReactNode {
     }
   }
 
-  function remove(rule: HeaderRule): void {
-    const dialog = DialogPlugin.confirm({
-      header: "删除规则",
-      body: `确定删除规则「${rule.name || "未命名"}」？`,
-      confirmBtn: { content: "删除", theme: "danger" },
-      cancelBtn: "取消",
-      onConfirm: () => {
-        dialog.destroy();
-        void (async () => {
-          await request({
-            type: "HEADERS_DELETE",
-            payload: { id: rule.id },
-          }).catch(() => {});
-          await reload();
-          flash("已删除");
-        })();
-      },
-      onClose: () => dialog.destroy(),
-    });
+  const [deleting, setDeleting] = useState<HeaderRule | null>(null);
+
+  async function performDelete(id: string): Promise<void> {
+    await request({
+      type: "HEADERS_DELETE",
+      payload: { id },
+    }).catch(() => {});
+    await reload();
+    flash("已删除");
   }
 
   async function reload(): Promise<void> {
@@ -175,59 +173,58 @@ export function HeadersTool(): React.ReactNode {
 
   return (
     <div className="headers-panel">
-      <div className="section-head">
-        <span className="section-title">规则 · {rules.length}</span>
-        <span className="section-head-actions">
-          <Button
+      <div className="headers-topbar">
+        <div className="ht-left">
+          <Switch
             size="small"
-            shape="circle"
-            variant="text"
-            theme="default"
-            title="导入 / 导出"
-            onClick={() => setShowIO((v) => !v)}
-          >
-            <SettingIcon />
-          </Button>
+            value={masterOn}
+            onChange={(v) => void toggleMaster(Boolean(v))}
+          />
+          <span className={`ht-title${masterOn ? "" : " off"}`}>
+            请求头改写
+          </span>
+        </div>
+        <div className="ht-right">
+          <span className="section-title">规则 · {rules.length}</span>
           <Button
             size="small"
             shape="circle"
             theme="primary"
             variant="outline"
             title="新建规则"
+            disabled={!masterOn}
             onClick={startCreate}
           >
             ＋
           </Button>
-        </span>
+        </div>
       </div>
 
-      {showIO && (
-        <HeaderImportExport rules={rules} onImported={reload} />
-      )}
+      <div className={masterOn ? "rules-zone" : "rules-zone dim"}>
+        {rules.length === 0 && (
+          <EmptyState
+            icon={<FilterIcon />}
+            title="还没有请求头规则"
+            hint="点击右上角 ＋ 创建第一条"
+          />
+        )}
 
-      {rules.length === 0 && (
-        <div className="empty-state">
-          <FilterIcon />
-          <p>还没有请求头规则</p>
-          <p className="muted">点击右上角 ＋ 创建第一条</p>
-        </div>
-      )}
-
-      {matched.length > 0 && (
-        <>
-          <p className="section-label">当前页生效 · {matched.length}</p>
-          {matched.map((rule) => (
-            <RuleRow
-              key={rule.id}
-              rule={rule}
-              badge
-              onToggle={(enabled) => void toggle(rule.id, enabled)}
-              onEdit={() => startEdit(rule)}
-              onDelete={() => void remove(rule)}
-            />
-          ))}
-        </>
-      )}
+        {matched.length > 0 && (
+          <>
+            <p className="section-label">当前页生效 · {matched.length}</p>
+            {matched.map((rule) => (
+              <RuleRow
+                key={rule.id}
+                rule={rule}
+                badge
+                onToggle={(enabled) => void toggle(rule.id, enabled)}
+                onEdit={() => startEdit(rule)}
+                onDelete={() => setDeleting(rule)}
+              />
+            ))}
+          </>
+        )}
+      </div>
 
       {others.length > 0 && (
         <>
@@ -238,20 +235,24 @@ export function HeadersTool(): React.ReactNode {
               rule={rule}
               onToggle={(enabled) => void toggle(rule.id, enabled)}
               onEdit={() => startEdit(rule)}
-              onDelete={() => void remove(rule)}
+              onDelete={() => setDeleting(rule)}
             />
           ))}
         </>
       )}
 
-      <Button
-        block
-        variant="text"
-        theme="primary"
-        onClick={() => void browser.runtime.openOptionsPage()}
-      >
-        导入 / 导出与更多设置 ⧉
-      </Button>
+      <ConfirmDialog
+        open={deleting != null}
+        header="删除规则"
+        body={`确定删除规则「${deleting?.name || "未命名"}」？`}
+        confirmText="删除"
+        danger
+        onConfirm={() => {
+          if (deleting) void performDelete(deleting.id);
+          setDeleting(null);
+        }}
+        onClose={() => setDeleting(null)}
+      />
     </div>
   );
 }

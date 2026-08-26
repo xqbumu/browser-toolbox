@@ -2,11 +2,12 @@
  * 批量截图面板（紧凑版）：双行入口盒，纵向占用压到最小。
  * - 按选项卡：行内直接「开始」；
  * - 按 URL：点击行展开输入区（懒渲染），底部计数 Tag + 提交按钮；
- * - 忙碌时整盒降透明度并禁点；确认弹窗走 DialogPlugin（B6 校验兜底不变）。
+ * - 忙碌时整盒降透明度并禁点；超限/跳过场景走受控 ConfirmDialog（B6 校验兜底不变）。
  */
 import { useState } from "react";
-import { Alert, Button, DialogPlugin, Tag, Textarea } from "tdesign-react";
+import { Alert, Button, Tag, Textarea } from "tdesign-react";
 import { ChevronDownIcon, LinkIcon, ViewListIcon } from "tdesign-icons-react";
+import { ConfirmDialog } from "@/ui/kit";
 import { validateBatchUrls, MAX_BATCH_URLS } from "@/utils/batch-validation";
 
 interface Props {
@@ -32,6 +33,7 @@ export function BatchPanel({
     kind: "err" | "warn";
     text: string;
   } | null>(null);
+  const [pendingUrls, setPendingUrls] = useState<string[] | null>(null);
 
   const validation = validateBatchUrls(urlsText);
   const hasInput = validation.lines.length > 0;
@@ -43,26 +45,10 @@ export function BatchPanel({
       return;
     }
     if (v.invalidCount > 0 || v.overLimit) {
-      const parts: string[] = [];
-      if (v.invalidCount > 0)
-        parts.push(`${v.invalidCount} 个非 http(s) URL 将被跳过`);
-      if (v.overLimit)
-        parts.push(`超过 ${MAX_BATCH_URLS} 条，仅截取前 ${MAX_BATCH_URLS} 条`);
-      const dialog = DialogPlugin.confirm({
-        header: "确认批量截图",
-        body: `${parts.join("；")}。是否继续？`,
-        confirmBtn: { content: "继续", theme: "primary" },
-        cancelBtn: "取消",
-        onConfirm: () => {
-          dialog.destroy();
-          setHint(null);
-          onBatchUrls(v.validUrls.slice(0, MAX_BATCH_URLS));
-        },
-        onClose: () => dialog.destroy(),
-      });
+      // 有跳过/截断：先确认再执行
+      setPendingUrls(v.validUrls.slice(0, MAX_BATCH_URLS));
       return;
     }
-    setHint(null);
     onBatchUrls(v.validUrls.slice(0, MAX_BATCH_URLS));
   }
 
@@ -172,6 +158,19 @@ export function BatchPanel({
               开始截图
             </Button>
           </div>
+
+          <ConfirmDialog
+            open={pendingUrls != null}
+            header="确认批量截图"
+            body="部分 URL 将被跳过或截断，是否继续？"
+            confirmText="继续"
+            onConfirm={() => {
+              if (pendingUrls) onBatchUrls(pendingUrls);
+              setPendingUrls(null);
+              setHint(null);
+            }}
+            onClose={() => setPendingUrls(null)}
+          />
         </div>
       )}
     </div>

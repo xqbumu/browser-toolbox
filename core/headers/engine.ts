@@ -8,7 +8,7 @@
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
 import { DNR_START_ID, toDnrRules } from "./dnr";
 import { applyHeaderActions, pickActions } from "./webrequest";
-import { listHeaderRules } from "@/utils/header-rules-store";
+import { isHeaderMasterEnabled, listHeaderRules } from "@/utils/header-rules-store";
 import { createLogger } from "@/utils/logger";
 
 const log = createLogger("header-engine");
@@ -58,7 +58,8 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     return {
       kind,
       async sync(): Promise<void> {
-        const rules = await listHeaderRules();
+        const masterOn = await isHeaderMasterEnabled();
+        const rules = masterOn ? await listHeaderRules() : [];
         const next = toDnrRules(rules);
         // 仅清理本引擎 id 区间内的动态规则，避免误删其他来源
         const existing = await new Promise<{ id: number }[]>((resolve) =>

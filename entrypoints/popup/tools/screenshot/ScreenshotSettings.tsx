@@ -12,7 +12,6 @@ import {
   MessagePlugin,
   Select,
 } from "tdesign-react";
-import { ArrowLeftIcon } from "tdesign-icons-react";
 import { DEFAULT_CONFIG, type CaptureConfig } from "@/types/config";
 import type { OutputFormat } from "@/types/capture";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
@@ -24,11 +23,7 @@ async function request<T>(msg: PopupRequest): Promise<T> {
   return res.data;
 }
 
-export function ScreenshotSettings({
-  onBack,
-}: {
-  onBack: () => void;
-}): ReactNode {
+export function ScreenshotSettings(): ReactNode {
   const [config, setConfig] = useState<CaptureConfig>(DEFAULT_CONFIG);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,17 +61,6 @@ export function ScreenshotSettings({
 
   return (
     <div className="settings-view">
-      <div className="settings-back">
-        <Button
-          size="small"
-          variant="text"
-          icon={<ArrowLeftIcon />}
-          onClick={onBack}
-        >
-          截图设置
-        </Button>
-      </div>
-
       <div className="rule-editor">
         <h3>保存位置</h3>
         <label className="field">

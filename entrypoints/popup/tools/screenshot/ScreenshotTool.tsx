@@ -113,7 +113,6 @@ function loadingLabel(progress: ProgressEvent | null): string {
 export function ScreenshotTool(): React.ReactNode {
   const [section, setSection] = useState<Section>("capture");
   const [pending, setPending] = useState<CaptureMode | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState<CaptureConfig>(DEFAULT_CONFIG);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [tabId, setTabId] = useState<number | null>(null);
@@ -401,146 +400,128 @@ export function ScreenshotTool(): React.ReactNode {
 
   return (
     <>
-      <div className="tool-topbar">
-        <Tabs
-          value={section}
-          onChange={(v: unknown) => setSection(v as Section)}
-          list={[
-            {
-              value: "capture",
-              label: `截图${historyCount > 0 ? ` · ${historyCount}` : ""}`,
-            },
-            { value: "history", label: "历史" },
-          ]}
-        />
-        <Button
-          shape="circle"
-          variant="text"
-          theme="default"
-          size="small"
-          title="截图设置"
-          onClick={() => setShowSettings(true)}
-        >
-          <SettingIcon />
-        </Button>
-      </div>
+      <Tabs
+        value={section}
+        onChange={(v: unknown) => setSection(v as Section)}
+        list={[
+          {
+            value: "capture",
+            label: `截图${historyCount > 0 ? ` · ${historyCount}` : ""}`,
+          },
+          { value: "history", label: "历史" },
+        ]}
+      />
 
-      {showSettings ? (
-        <ScreenshotSettings onBack={() => setShowSettings(false)} />
-      ) : (
+      {section === "capture" && (
         <>
-          {section === "capture" && (
-            <>
-              {degraded && (
-                <div className="degrade-banner">
-                  当前浏览器仅支持可见区域截图。整页滚动截图、选定区域与按 URL
-                  批量截图已禁用。
-                </div>
-              )}
-
-              <CaptureTiles
-                availability={availability}
-                pending={pending}
-                progressLabel={loadingLabel(progress)}
-                onStart={(m) =>
-                  m === "area" ? onCaptureArea() : void onCapture(m)
-                }
-              />
-
-              {status && (
-                <Alert
-                  theme={
-                    status.kind === "ok"
-                      ? "success"
-                      : status.kind === "err"
-                        ? "error"
-                        : status.kind === "warn"
-                          ? "warning"
-                          : "info"
-                  }
-                  className="status-alert"
-                  message={status.text}
-                />
-              )}
-
-              {status?.kind === "err" && lastFailedMode && !busy && (
-                <Button
-                  block
-                  variant="outline"
-                  onClick={() => void onCapture(lastFailedMode)}
-                >
-                  ↻ 重试
-                </Button>
-              )}
-
-              {showQuickActions && (
-                <div className="quick-actions">
-                  <Button
-                    size="small"
-                    variant="text"
-                    icon={<BrowseIcon />}
-                    onClick={() => void previewResult(lastResult!)}
-                  >
-                    预览
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="text"
-                    icon={<CopyIcon />}
-                    onClick={() => void copyResult(lastResult!)}
-                  >
-                    复制
-                  </Button>
-                  {lastResult!.downloadId != null && (
-                    <Button
-                      size="small"
-                      variant="text"
-                      icon={<FolderOpenIcon />}
-                      onClick={() => void openFolder(lastResult!.downloadId!)}
-                    >
-                      文件夹
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              <ProgressBar progress={progress} busy={busy} />
-
-              {busy && activeJob && (
-                <Button
-                  block
-                  theme="danger"
-                  variant="outline"
-                  onClick={() => void onCancel()}
-                >
-                  ✕ 取消截图
-                </Button>
-              )}
-
-              <BatchPanel
-                tabCount={tabCount}
-                canBatchTabs={caps?.canBatchTabs ?? true}
-                canBatchUrls={caps?.canBatchUrls ?? true}
-                busy={busy}
-                onBatchTabs={() => void onBatchTabs()}
-                onBatchUrls={(urls) => void onBatchUrls(urls)}
-              />
-
-              <p className="capture-foot muted">
-                {config.saveSubfolder
-                  ? `自动保存到「下载」目录的 ${config.saveSubfolder}/ 子文件夹`
-                  : "结果自动下载到浏览器「下载」目录"}
-              </p>
-            </>
+          {degraded && (
+            <div className="degrade-banner">
+              当前浏览器仅支持可见区域截图。整页滚动截图、选定区域与按 URL
+              批量截图已禁用。
+            </div>
           )}
 
-          {section === "history" && (
-            <HistoryList
-              onPreview={(item) => void handlePreview(item)}
-              onCountChange={setHistoryCount}
+          <CaptureTiles
+            availability={availability}
+            pending={pending}
+            progressLabel={loadingLabel(progress)}
+            onStart={(m) =>
+              m === "area" ? onCaptureArea() : void onCapture(m)
+            }
+          />
+
+          {status && (
+            <Alert
+              theme={
+                status.kind === "ok"
+                  ? "success"
+                  : status.kind === "err"
+                    ? "error"
+                    : status.kind === "warn"
+                      ? "warning"
+                      : "info"
+              }
+              className="status-alert"
+              message={status.text}
             />
           )}
+
+          {status?.kind === "err" && lastFailedMode && !busy && (
+            <Button
+              block
+              variant="outline"
+              onClick={() => void onCapture(lastFailedMode)}
+            >
+              ↻ 重试
+            </Button>
+          )}
+
+          {showQuickActions && (
+            <div className="quick-actions">
+              <Button
+                size="small"
+                variant="text"
+                icon={<BrowseIcon />}
+                onClick={() => void previewResult(lastResult!)}
+              >
+                预览
+              </Button>
+              <Button
+                size="small"
+                variant="text"
+                icon={<CopyIcon />}
+                onClick={() => void copyResult(lastResult!)}
+              >
+                复制
+              </Button>
+              {lastResult!.downloadId != null && (
+                <Button
+                  size="small"
+                  variant="text"
+                  icon={<FolderOpenIcon />}
+                  onClick={() => void openFolder(lastResult!.downloadId!)}
+                >
+                  文件夹
+                </Button>
+              )}
+            </div>
+          )}
+
+          <ProgressBar progress={progress} busy={busy} />
+
+          {busy && activeJob && (
+            <Button
+              block
+              theme="danger"
+              variant="outline"
+              onClick={() => void onCancel()}
+            >
+              ✕ 取消截图
+            </Button>
+          )}
+
+          <BatchPanel
+            tabCount={tabCount}
+            canBatchTabs={caps?.canBatchTabs ?? true}
+            canBatchUrls={caps?.canBatchUrls ?? true}
+            busy={busy}
+            onBatchTabs={() => void onBatchTabs()}
+            onBatchUrls={(urls) => void onBatchUrls(urls)}
+          />
+
+          <p className="capture-foot muted">
+            {config.saveSubfolder
+              ? `自动保存到「下载」目录的 ${config.saveSubfolder}/ 子文件夹`
+              : "结果自动下载到浏览器「下载」目录"}
+          </p>
         </>
+      )}
+
+      {section === "history" && (
+        <HistoryList
+          onPreview={(item) => void handlePreview(item)}
+          onCountChange={setHistoryCount}
+        />
       )}
 
       {preview && (

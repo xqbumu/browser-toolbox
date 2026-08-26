@@ -273,6 +273,15 @@ async function handleRequest(
       await deleteRecord(msg.payload.id);
       return { ok: true, data: { deleted: msg.payload.id } };
 
+    case "HISTORY_DELETE_MANY": {
+      let deleted = 0;
+      for (const id of msg.payload.ids) {
+        await deleteRecord(id).catch(() => {});
+        deleted += 1;
+      }
+      return { ok: true, data: { deleted } };
+    }
+
     case "HISTORY_CLEAR":
       return { ok: true, data: { cleared: await clearRecords() } };
 

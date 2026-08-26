@@ -2,7 +2,7 @@
  * 截图动作磁贴（直按式）：三种模式各一个等宽磁贴，点击立即执行。
  * 取消「先选模式再点执行」的两步交互；忙碌时对应磁贴展示进度文案。
  */
-import { Button, Loading, Tag } from "tdesign-react";
+import { Loading, Tag } from "tdesign-react";
 import type { CaptureMode } from "@/types/capture";
 import type { ProgressEvent } from "@/types/messages";
 
@@ -46,11 +46,11 @@ export function CaptureTiles({
           (pending != null && pending !== tile.mode);
         const isPending = pending === tile.mode;
         return (
-          <Button
+          <button
             key={tile.mode}
-            className="capture-tile"
-            variant="outline"
-            disabled={disabled}
+            type="button"
+            className={`capture-tile${isPending ? " pending" : ""}`}
+            disabled={disabled || isPending}
             title={tile.title}
             onClick={() => onStart(tile.mode)}
           >
@@ -73,7 +73,7 @@ export function CaptureTiles({
                 </span>
               </>
             )}
-          </Button>
+          </button>
         );
       })}
     </div>
