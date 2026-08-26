@@ -13,8 +13,21 @@ import {
 import { Button, Tooltip } from "tdesign-react";
 import { TOOLS } from "./tools";
 
+/** 记住上次激活的工具：localStorage 同步读取，避免打开时闪回默认工具 */
+const LAST_TOOL_KEY = "popup:lastToolId";
+
+function loadLastToolId(): string {
+  try {
+    const saved = localStorage.getItem(LAST_TOOL_KEY);
+    if (saved && TOOLS.some((t) => t.id === saved)) return saved;
+  } catch {
+    // 隐私模式等场景读取失败，回退默认
+  }
+  return TOOLS[0]?.id ?? "";
+}
+
 export default function App() {
-  const [toolId, setToolId] = useState<string>(TOOLS[0]?.id ?? "");
+  const [toolId, setToolId] = useState<string>(loadLastToolId);
   const [showSettings, setShowSettings] = useState(false);
   const active = TOOLS.find((t) => t.id === toolId) ?? TOOLS[0];
 
@@ -56,6 +69,11 @@ export default function App() {
   function switchTool(id: string): void {
     setToolId(id);
     setShowSettings(false);
+    try {
+      localStorage.setItem(LAST_TOOL_KEY, id);
+    } catch {
+      // 写入失败不影响切换
+    }
   }
 
   return (

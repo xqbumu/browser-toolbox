@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { applyHeaderActions, pickActions } from "@/core/headers/webrequest";
-import { newHeaderRule, type HeaderRule } from "@/types/headers";
+import {
+  newHeaderRule,
+  type HeaderRule,
+  type UrlMatchItem,
+} from "@/types/headers";
 
 function rule(partial: Partial<HeaderRule>): HeaderRule {
   return {
@@ -8,11 +12,16 @@ function rule(partial: Partial<HeaderRule>): HeaderRule {
     id: "r",
     name: "r",
     enabled: true,
-    condition: { urlFilters: ["*://*/*"] },
+    condition: { matches: [{ matchType: "pattern", value: "*://*/*" }] },
     actions: [],
     ...partial,
   };
 }
+
+const P = (value: string): UrlMatchItem => ({
+  matchType: "pattern",
+  value,
+});
 
 const base = [
   { name: "Accept", value: "text/html" },
@@ -70,24 +79,58 @@ describe("pickActions", () => {
         actions: [{ target: "request", op: "set", name: "Nope", value: "" }],
       }),
       rule({
-        condition: { urlFilters: ["https://api.example.com/*"] },
+        condition: {
+          matches: [
+            P("https://api.example.com/*"),
+            P("https://api.example.org/*"),
+          ],
+        },
         actions: [
           { target: "request", op: "set", name: "Req", value: "1" },
           { target: "response", op: "set", name: "Resp", value: "2" },
         ],
       }),
     ];
-    const req = pickActions(rules, "https://api.example.com/x", "request");
-    expect(req.map((a) => a.name)).toEqual(["Req"]);
+    expect(
+      pickActions(rules, "https://api.example.com/x", "request").map(
+        (a) => a.name,
+      ),
+    ).toEqual(["Req"]);
+    expect(pickActions(rules, "https://other.com/", "response")).toEqual([]);
+  });
 
-    const resp = pickActions(rules, "https://other.com/", "response");
-    expect(resp).toEqual([]);
+  it("多条件组任一命中即应用", () => {
+    const rules = [
+      rule({
+        condition: {
+          matches: [P("https://a.com/*"), P("https://b.com/*")],
+        },
+        actions: [{ target: "request", op: "set", name: "Multi", value: "" }],
+      }),
+    ];
+    expect(pickActions(rules, "https://b.com/x", "request")).toHaveLength(1);
+    expect(pickActions(rules, "https://c.io/", "request")).toEqual([]);
+  });
+
+  it("contains 匹配走同一谓词", () => {
+    const rules = [
+      rule({
+        condition: {
+          matches: [{ matchType: "contains", value: "/api/v2/" }],
+        },
+        actions: [{ target: "request", op: "set", name: "C", value: "" }],
+      }),
+    ];
+    expect(pickActions(rules, "https://x.io/api/v2/u", "request")).toHaveLength(
+      1,
+    );
+    expect(pickActions(rules, "https://x.io/api/v1/u", "request")).toEqual([]);
   });
 
   it("方法受限规则：方法匹配才应用，未知方法不应用", () => {
     const rules = [
       rule({
-        condition: { urlFilters: ["*://*/*"], methods: ["POST"] },
+        condition: { matches: [P("*://*/*")], methods: ["POST"] },
         actions: [{ target: "request", op: "set", name: "M", value: "" }],
       }),
     ];
@@ -104,36 +147,19 @@ describe("pickActions", () => {
     const rules = [
       rule({
         condition: {
-          urlFilters: ["*://*/*"],
+          matches: [P("*://*/*")],
           resourceTypes: ["xmlhttprequest"],
         },
         actions: [{ target: "request", op: "set", name: "T", value: "" }],
       }),
     ];
     expect(
-      pickActions(
-        rules,
-        "https://x.com/",
-        "request",
-        "GET",
-        "xmlhttprequest",
-      ).map((a) => a.name),
-    ).toEqual(["T"]);
+      pickActions(rules, "https://x.com/", "request", "GET", "xmlhttprequest"),
+    ).toHaveLength(1);
     expect(
       pickActions(rules, "https://x.com/", "request", "GET", "main_frame"),
     ).toEqual([]);
     // 未知类型（如 csp_report）：宁可漏改不可错改
     expect(pickActions(rules, "https://x.com/", "request", "GET")).toEqual([]);
-  });
-
-  it("多模式任一命中即应用", () => {
-    const rules = [
-      rule({
-        condition: { urlFilters: ["https://a.com/*", "https://b.com/*"] },
-        actions: [{ target: "request", op: "set", name: "Multi", value: "" }],
-      }),
-    ];
-    expect(pickActions(rules, "https://b.com/x", "request")).toHaveLength(1);
-    expect(pickActions(rules, "https://c.io/", "request")).toHaveLength(0);
   });
 });

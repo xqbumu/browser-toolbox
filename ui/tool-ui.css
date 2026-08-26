@@ -74,13 +74,20 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 8px;
+  width: 100%;
+  padding: 9px 10px;
+  margin-bottom: 4px;
   border-radius: var(--tb-radius-sm, 8px);
+  background: var(--tb-surface, #fff);
   transition: background 0.12s;
 }
 .rule-row:hover {
-  background: #fafbfc;
+  background: var(--tb-surface-2, #f2f3f5);
 }
+.rule-row:last-child {
+  margin-bottom: 0;
+}
+
 .rule-row.disabled .rule-name {
   color: #9ca3af;
   text-decoration: line-through;
@@ -815,4 +822,31 @@ ul.error-list li::marker {
 }
 .rail-dot.off {
   background: #c0c4cc;
+}
+
+
+/* 多选下拉固定单行：标签横向滚动，不撑高 */
+.one-line-select .t-select__tags {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-height: 30px;
+}
+.one-line-select .t-select__tags::-webkit-scrollbar {
+  display: none;
+}
+.one-line-select .t-tag {
+  flex-shrink: 0;
+}
+
+/* 下拉面板不越出弹窗：宽度贴住触发器，禁止横向外溢 */
+.action-line .t-popup,
+.one-line-select .t-popup {
+  max-width: calc(100vw - 12px);
+}
+.action-line .sel-target {
+  width: 104px;
+}
+.action-line .sel-op {
+  width: 84px;
 }

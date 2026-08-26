@@ -8,6 +8,7 @@
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
 import { DNR_START_ID, toDnrRules } from "./dnr";
 import { applyHeaderActions, pickActions } from "./webrequest";
+import { conditionMatchesUrl } from "./match";
 import { isHeaderMasterEnabled, listHeaderRules } from "@/utils/header-rules-store";
 import { createLogger } from "@/utils/logger";
 
@@ -141,7 +142,51 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     };
   };
 
+  // cancel / redirect 规则在 onBeforeRequest 阶段处理
+  let cancelRules: HeaderRule[] = [];
+  let redirectRules: HeaderRule[] = [];
+  function resolveBeforeRequest(
+    url: string,
+  ): { cancel?: boolean; redirectUrl?: string } | undefined {
+    for (const rule of cancelRules) {
+      if (conditionMatchesUrl(rule.condition, url)) return { cancel: true };
+    }
+    for (const rule of redirectRules) {
+      const mt = rule.condition.matchType ?? "pattern";
+      const to = (rule.redirectTo ?? "").trim();
+      if (!to) continue;
+      if (mt === "regex") {
+        try {
+          const re = new RegExp(rule.condition.urlValue ?? "", "i");
+          if (re.test(url)) {
+            return { redirectUrl: url.replace(re, to) };
+          }
+        } catch {
+          // 非法正则不处理
+        }
+      } else if (conditionMatchesUrl(rule.condition, url)) {
+        // pattern/contains：固定目标（要求绝对地址，校验层已保证）
+        return { redirectUrl: to };
+      }
+    }
+    return undefined;
+  }
+
+  const onBeforeRequest = (details: { url: string }): { cancel?: boolean; redirectUrl?: string } | undefined => {
+    return resolveBeforeRequest(details.url);
+  };
+
   const wr = browser.webRequest as unknown as {
+    onBeforeRequest: {
+      addListener: (
+        cb: (details: { url: string }) =>
+          | { cancel?: boolean; redirectUrl?: string }
+          | undefined,
+        filter: { urls: string[] },
+        extra: string[],
+      ) => void;
+      removeListener: (cb: (details: { url: string }) => { cancel?: boolean; redirectUrl?: string } | undefined) => void;
+    };
     onBeforeSendHeaders: {
       addListener: (
         cb: typeof onBeforeSendHeaders,
@@ -159,6 +204,11 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       removeListener: (cb: typeof onHeadersReceived) => void;
     };
   };
+  wr.onBeforeRequest.addListener(
+    onBeforeRequest,
+    { urls: ["<all_urls>"] },
+    ["blocking"],
+  );
   wr.onBeforeSendHeaders.addListener(
     onBeforeSendHeaders,
     { urls: ["<all_urls>"] },
@@ -174,10 +224,24 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     kind,
     async sync(): Promise<void> {
       const all = await listHeaderRules();
-      enabled = all.filter((r) => r.enabled);
-      log.info(`webRequest 引擎已缓存 ${enabled.length} 条启用规则`);
+      const headersOnly: HeaderRule[] = [];
+      enabled = [];
+      for (const r of all.filter((r) => r.enabled)) {
+        if ((r.kind ?? "headers") === "headers") {
+          enabled.push(r);
+          headersOnly.push(r);
+        } else if (r.kind === "cancel") {
+          cancelRules.push(r);
+        } else if (r.kind === "redirect") {
+          redirectRules.push(r);
+        }
+      }
+      log.info(
+        `webRequest 缓存：头部 ${enabled.length} · 取消 ${cancelRules.length} · 重定向 ${redirectRules.length}`,
+      );
     },
     dispose(): void {
+      wr.onBeforeRequest.removeListener(onBeforeRequest);
       wr.onBeforeSendHeaders.removeListener(onBeforeSendHeaders);
       wr.onHeadersReceived.removeListener(onHeadersReceived);
     },

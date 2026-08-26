@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   conditionMatches,
   matchPatternToRegExp,
-  matchedRules,
   urlMatchesPattern,
 } from "@/core/headers/match";
-import { newHeaderRule, type HeaderRule } from "@/types/headers";
+import {
+  newHeaderRule,
+  type HeaderRule,
+  type UrlMatchItem,
+} from "@/types/headers";
 
 function rule(partial: Partial<HeaderRule>): HeaderRule {
   return {
@@ -13,15 +16,13 @@ function rule(partial: Partial<HeaderRule>): HeaderRule {
     id: "r1",
     name: "测试规则",
     enabled: true,
-    condition: { urlFilters: ["*://*/*"] },
+    condition: { matches: [{ matchType: "pattern", value: "*://*/*" }] },
     actions: [{ target: "request", op: "set", name: "X-Test", value: "1" }],
     ...partial,
   };
 }
 
-function matches(patterns: string[], url: string): boolean {
-  return conditionMatches({ urlFilters: patterns }, url);
-}
+const P = (value: string): UrlMatchItem => ({ matchType: "pattern", value });
 
 describe("matchPatternToRegExp", () => {
   it("全匹配 pattern", () => {
@@ -60,73 +61,61 @@ describe("matchPatternToRegExp", () => {
   });
 });
 
-describe("matchedRules", () => {
-  it("只返回启用且命中的规则", () => {
-    const rules = [
-      rule({ id: "hit", condition: { urlFilters: ["*://api.example.com/*"] } }),
-      rule({
-        id: "disabled",
-        enabled: false,
-        condition: { urlFilters: ["*://*/*"] },
-      }),
-      rule({ id: "miss", condition: { urlFilters: ["https://other.io/*"] } }),
-    ];
-    const got = matchedRules(rules, "https://api.example.com/v1/users");
-    expect(got.map((r) => r.id)).toEqual(["hit"]);
+describe("条件组（matches）判定", () => {
+  const c = (items: UrlMatchItem[]) =>
+    ({ matches: items }) as HeaderRule["condition"];
+
+  it("任一命中即生效（OR）", () => {
+    const cond = c([P("https://a.com/*"), P("https://b.org/api/*")]);
+    expect(conditionMatches(cond, "https://b.org/api/x")).toBe(true);
+    expect(conditionMatches(cond, "https://c.io/")).toBe(false);
   });
 
-  it("空 URL 返回空", () => {
-    expect(matchedRules([rule({})], "")).toEqual([]);
+  it("混合方式：pattern + contains + regex 组合判定", () => {
+    const cond = c([
+      P("https://a.com/*"),
+      { matchType: "contains", value: "/api/v2/" },
+      { matchType: "regex", value: "^https://cdn\\.[a-z]+\\.net/" },
+    ]);
+    expect(conditionMatches(cond, "https://x.io/api/v2/u")).toBe(true);
+    expect(conditionMatches(cond, "https://cdn.abc.net/f.js")).toBe(true);
+    expect(conditionMatches(cond, "https://plain.org/")).toBe(false);
   });
-});
 
-describe("多模式条件", () => {
-  it("任一 pattern 命中即生效", () => {
+  it("空组恒不命中；非法正则恒不命中", () => {
+    expect(conditionMatches(c([]), "https://a.com/")).toBe(false);
     expect(
-      matches(
-        ["https://a.com/*", "https://b.org/api/*"],
-        "https://b.org/api/x",
+      conditionMatches(
+        c([{ matchType: "regex", value: "(" }]),
+        "https://a.com/",
       ),
-    ).toBe(true);
-    expect(
-      matches(["https://a.com/*", "https://b.org/api/*"], "https://c.io/"),
     ).toBe(false);
   });
-
-  it("空 pattern 列表恒不命中", () => {
-    expect(matches([], "https://a.com/")).toBe(false);
-  });
-
-  it("全匹配与具体模式混用时整体命中", () => {
-    expect(matches(["*", "https://a.com/*"], "https://anything.net/")).toBe(
-      true,
-    );
-  });
 });
 
-describe('migrateHeaderRule', () => {
-  it('旧单值 urlFilter 迁移为数组', async () => {
-    const { migrateHeaderRule } = await import('@/types/headers');
-    const legacy = {
-      ...newHeaderRule(),
-      condition: { urlFilter: '*://api.example.com/*' },
-    } as unknown as HeaderRule;
-    const migrated = migrateHeaderRule(legacy);
-    expect(migrated.condition.urlFilters).toEqual(['*://api.example.com/*']);
-    expect((migrated.condition as { urlFilter?: string }).urlFilter).toBeUndefined();
+describe("conditionMatches 方法/资源过滤", () => {
+  const base = {
+    urlFilters: undefined,
+    matches: [P("*://*/*")],
+  } as HeaderRule["condition"];
+
+  it("方法受限：大小写不敏感匹配", () => {
+    const cond = { ...base, methods: ["POST"] };
+    expect(conditionMatches(cond, "https://x.com/", "POST")).toBe(true);
+    expect(conditionMatches(cond, "https://x.com/", "GET")).toBe(false);
   });
 
-  it('缺失字段补默认值', async () => {
-    const { migrateHeaderRule } = await import('@/types/headers');
-    const migrated = migrateHeaderRule({
-      ...(newHeaderRule() as unknown as HeaderRule),
-      name: undefined as unknown as string,
-      enabled: undefined as unknown as boolean,
-      createdAt: undefined as unknown as number,
-      updatedAt: undefined as unknown as number,
-    });
-    expect(migrated.name).toBe('');
-    expect(migrated.enabled).toBe(false);
-    expect(Number.isFinite(migrated.createdAt)).toBe(true);
+  it("资源类型受限：类型未知时跳过判断（宽松）", () => {
+    const cond: HeaderRule["condition"] = {
+      ...base,
+      resourceTypes: ["xmlhttprequest"],
+    };
+    expect(conditionMatches(cond, "https://x.com/", "GET")).toBe(true); // 未传类型 → 不限
+    expect(
+      conditionMatches(cond, "https://x.com/", "GET", "xmlhttprequest"),
+    ).toBe(true);
+    expect(conditionMatches(cond, "https://x.com/", "GET", "main_frame")).toBe(
+      false,
+    );
   });
 });

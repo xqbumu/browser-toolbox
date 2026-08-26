@@ -38,26 +38,46 @@ export interface HeaderAction {
   value?: string;
 }
 
+/** URL 匹配方式 */
+export type UrlMatchType = "pattern" | "contains" | "regex";
+
+/** 单条 URL 匹配规则（组内成员） */
+export interface UrlMatchItem {
+  matchType: UrlMatchType;
+  /** pattern=match pattern；contains=包含子串；regex=正则表达式 */
+  value: string;
+}
+
 /** 匹配条件 */
 export interface HeaderRuleCondition {
   /**
-   * URL 匹配模式列表（Chrome match pattern 风格），任一命中即生效：
-   * `*://api.example.com/*`、`https://example.com/api/*`，
-   * 全匹配可用 `<all_urls>` 或 `*`。DNR 路径按模式展开为多条动态规则。
-   * 兼容历史字段 urlFilter（单值），读取时自动迁移。
+   * URL 匹配条件组（任一命中即生效）。
+   * 兼容历史形态（urlFilter 单值 / urlFilters 数组 / matchType+urlValue），读取时自动迁移。
    */
-  urlFilters: string[];
+  matches: UrlMatchItem[];
+  /** 兼容历史字段：旧 matchType+urlValue 单值形态迁移用 */
+  matchType?: UrlMatchType;
+  urlValue?: string;
   /** 资源类型白名单；缺省 = 全部 */
   resourceTypes?: HeaderResourceType[];
   /** HTTP 方法白名单（大写）；缺省 = 全部 */
   methods?: string[];
 }
 
+/** 规则动作类型：改写头部 / 阻止请求 / 重定向 */
+export type RuleKind = "headers" | "cancel" | "redirect";
+
 /** 请求头规则（扁平、可独立启停） */
 export interface HeaderRule {
   id: string;
   name: string;
   enabled: boolean;
+  /** 动作类型；缺省视为 headers（兼容存量数据） */
+  kind?: RuleKind;
+  /** kind=redirect：目标地址。正则匹配模式支持 $1~$9 引用捕获组 */
+  redirectTo?: string;
+  /** 备注（可选，列表 tooltip 与编辑器展示） */
+  comment?: string;
   condition: HeaderRuleCondition;
   actions: HeaderAction[];
   createdAt: number;
@@ -70,7 +90,7 @@ export function newHeaderRule(now = Date.now()): HeaderRule {
     id: "",
     name: "",
     enabled: true,
-    condition: { urlFilters: ["*://*/*"] },
+    condition: { matches: [{ matchType: "pattern", value: "*://*/*" }] },
     actions: [{ target: "request", op: "set", name: "", value: "" }],
     createdAt: now,
     updatedAt: now,
@@ -88,29 +108,70 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
     errors.push("规则名称不能为空");
   }
   const condition = rule.condition as
-    (HeaderRuleCondition & { urlFilter?: unknown }) | undefined;
-  const rawFilters =
-    condition && Array.isArray(condition.urlFilters)
-      ? condition.urlFilters
-      : condition && typeof condition.urlFilter === "string"
-        ? [condition.urlFilter]
-        : [];
-  const filters = rawFilters
-    .filter((f) => typeof f === "string" && f.trim())
-    .map((f) => (f as string).trim());
-  if (filters.length === 0) {
-    errors.push("至少需要一条 URL 匹配模式");
+    | (HeaderRuleCondition & { urlFilter?: unknown; urlValue?: unknown })
+    | undefined;
+  const matchType: UrlMatchType =
+    condition?.matchType === "contains" || condition?.matchType === "regex"
+      ? condition.matchType
+      : "pattern";
+
+  const matches = Array.isArray(condition?.matches)
+    ? (condition!.matches as UrlMatchItem[])
+    : [];
+  if (matches.length === 0) {
+    errors.push("至少需要一条 URL 匹配条件");
   }
-  for (const f of filters) {
-    if (f !== "*" && f !== "<all_urls>" && !isValidMatchPattern(f)) {
-      errors.push(`URL 匹配模式不合法：${f}（示例：*://api.example.com/*）`);
+  matches.forEach((m, i) => {
+    const label = `第 ${i + 1} 条匹配条件`;
+    if (m == null || typeof m !== "object") {
+      errors.push(`${label}：不是有效对象`);
+      return;
+    }
+    const v = typeof m.value === "string" ? m.value.trim() : "";
+    if (!v) {
+      errors.push(`${label}：匹配值不能为空`);
+      return;
+    }
+    if ((m.matchType ?? "pattern") === "pattern") {
+      if (
+        v !== "*" &&
+        v !== "<all_urls>" &&
+        v !== "*://*/*" &&
+        !isValidMatchPattern(v)
+      ) {
+        errors.push(`${label}：match pattern 不合法（${v}）`);
+      }
+    } else if (m.matchType === "regex") {
+      try {
+        // eslint-disable-next-line no-new
+        new RegExp(v);
+      } catch {
+        errors.push(`${label}：正则表达式不合法（${v}）`);
+      }
+    }
+  });
+
+  const actions = Array.isArray(rule.actions) ? rule.actions : [];
+  const kind: RuleKind =
+    rule.kind === "cancel" || rule.kind === "redirect" ? rule.kind : "headers";
+
+  if (kind === "headers") {
+    if (actions.length === 0) {
+      errors.push("至少需要一条头部动作");
+    }
+  } else if (kind === "redirect") {
+    const to =
+      typeof rule.redirectTo === "string" ? rule.redirectTo.trim() : "";
+    if (!to) {
+      errors.push("重定向目标不能为空");
+    } else if (matchType !== "regex" && !/^https?:\/\//i.test(to)) {
+      errors.push("非正则匹配时，重定向目标必须是 http(s) 绝对地址");
     }
   }
-  const actions = Array.isArray(rule.actions) ? rule.actions : [];
-  if (actions.length === 0) {
-    errors.push("至少需要一条头部动作");
-  }
+  // cancel：命中即阻止，无额外字段
+
   actions.forEach((a, i) => {
+    if (kind !== "headers") return;
     const label = `动作 #${i + 1}`;
     if (a == null || typeof a !== "object") {
       errors.push(`${label}：不是有效对象`);
@@ -153,25 +214,104 @@ export function isValidMatchPattern(pattern: string): boolean {
  * 存储读取与导入路径统一调用，保证引擎与 UI 只面对新模型。
  */
 export function migrateHeaderRule(raw: HeaderRule): HeaderRule {
-  const condition = { ...(raw.condition ?? {}) } as HeaderRuleCondition & {
-    urlFilter?: string;
+  const rawCond = (raw.condition ?? {}) as HeaderRuleCondition & {
+    urlFilter?: unknown;
+    urlFilters?: unknown;
+    matchType?: unknown;
+    urlValue?: unknown;
   };
-  if (!Array.isArray(condition.urlFilters)) {
-    condition.urlFilters =
-      typeof condition.urlFilter === "string" && condition.urlFilter.trim()
-        ? [condition.urlFilter.trim()]
-        : Array.isArray(condition.urlFilters)
-          ? condition.urlFilters
-          : [];
+
+  const matches: UrlMatchItem[] = [];
+  if (Array.isArray(rawCond.matches)) {
+    for (const m of rawCond.matches) {
+      if (
+        m &&
+        typeof m === "object" &&
+        typeof m.value === "string" &&
+        m.value.trim()
+      ) {
+        const t = m.matchType;
+        matches.push({
+          matchType: t === "contains" || t === "regex" ? t : "pattern",
+          value: m.value.trim(),
+        });
+      }
+    }
+  } else if (
+    typeof rawCond.urlFilter === "string" &&
+    rawCond.urlFilter.trim()
+  ) {
+    // 最早期形态：单值 urlFilter
+    matches.push({ matchType: "pattern", value: rawCond.urlFilter.trim() });
+  } else if (Array.isArray(rawCond.urlFilters)) {
+    // 上一代形态：模式数组
+    for (const f of rawCond.urlFilters) {
+      if (typeof f === "string" && f.trim()) {
+        matches.push({ matchType: "pattern", value: f.trim() });
+      }
+    }
   }
-  delete condition.urlFilter;
+  // 上一上代补充：matchType+urlValue 单值
+  if (
+    matches.length === 0 &&
+    (rawCond.matchType === "contains" || rawCond.matchType === "regex") &&
+    typeof rawCond.urlValue === "string" &&
+    rawCond.urlValue.trim()
+  ) {
+    matches.push({
+      matchType: rawCond.matchType,
+      value: rawCond.urlValue.trim(),
+    });
+  }
+
   return {
     ...raw,
     name: typeof raw.name === "string" ? raw.name : "",
     enabled: Boolean(raw.enabled),
+    kind:
+      raw.kind === "cancel" || raw.kind === "redirect" ? raw.kind : "headers",
     createdAt: raw.createdAt ?? 0,
     updatedAt: raw.updatedAt ?? 0,
-    condition,
+    comment: typeof raw.comment === "string" ? raw.comment : undefined,
+    condition: { matches },
     actions: Array.isArray(raw.actions) ? raw.actions : [],
   };
+}
+
+/** 条件摘要（列表行副文案共用）：按匹配方式输出简短描述 */
+export function describeCondition(condition: HeaderRuleCondition): string {
+  const ms = condition.matches ?? [];
+  if (ms.length === 0) return "无匹配条件";
+  const label = (m: UrlMatchItem): string => {
+    const v = m.value?.trim() ?? "";
+    if (m.matchType === "contains") return `含 ${v}`;
+    if (m.matchType === "regex") return `re: ${v}`;
+    return v;
+  };
+  const first = label(ms[0]!);
+  return ms.length > 1 ? `${first} 等 ${ms.length} 组` : first;
+}
+
+/** 规则动作类型的短标签 */
+export function ruleKindLabel(kind: RuleKind | undefined): string {
+  switch (kind) {
+    case "cancel":
+      return "阻止请求";
+    case "redirect":
+      return "重定向";
+    default:
+      return "改写头部";
+  }
+}
+
+/** 动作摘要（列表行副文案）：按类型输出 */
+export function describeActions(rule: HeaderRule): string {
+  if (rule.kind === "cancel") return "命中即取消请求";
+  if (rule.kind === "redirect") return `→ ${rule.redirectTo ?? "?"}`;
+  const req = rule.actions.filter((a) => a.target === "request").length;
+  const resp = rule.actions.filter((a) => a.target === "response").length;
+  const parts: string[] = [];
+  if (req > 0) parts.push(`请求 ×${req}`);
+  if (resp > 0) parts.push(`响应 ×${resp}`);
+  return parts.join(" / ") || "无动作";
 }

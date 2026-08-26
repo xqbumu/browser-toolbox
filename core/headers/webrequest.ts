@@ -8,7 +8,7 @@ import type {
   HeaderResourceType,
   HeaderRule,
 } from "@/types/headers";
-import { urlMatchesPattern } from "./match";
+import { conditionMatchesUrl } from "./match";
 
 export interface HttpHeader {
   name: string;
@@ -31,9 +31,7 @@ export function pickActions(
   const out: HeaderAction[] = [];
   for (const rule of rules) {
     if (!rule.enabled) continue;
-    const patterns = rule.condition.urlFilters ?? [];
-    if (patterns.length === 0) continue;
-    if (!patterns.some((pt) => urlMatchesPattern(url, pt))) continue;
+    if (!conditionMatchesUrl(rule.condition, url)) continue;
 
     const methods = rule.condition.methods;
     if (methods?.length) {

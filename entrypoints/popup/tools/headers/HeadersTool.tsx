@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { Button, MessagePlugin, Switch, Tag } from "tdesign-react";
 import type { HeaderRule } from "@/types/headers";
-import { newHeaderRule } from "@/types/headers";
+import { describeActions, describeCondition, newHeaderRule } from "@/types/headers";
 import { FilterIcon } from "tdesign-icons-react";
 import { ConfirmDialog, EmptyState } from "@/ui/kit";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
@@ -24,23 +24,6 @@ async function request<T>(msg: PopupRequest): Promise<T> {
   const res = (await browser.runtime.sendMessage(msg)) as PopupResponse<T>;
   if (!res.ok) throw new Error(res.error);
   return res.data;
-}
-
-/** 模式摘要：首个 pattern + 剩余计数 */
-function patternsLabel(rule: HeaderRule): string {
-  const ps = rule.condition.urlFilters ?? [];
-  if (ps.length === 0) return "无匹配模式";
-  const first = ps[0]!;
-  return ps.length > 1 ? `${first} 等 ${ps.length} 条` : first;
-}
-
-/** 动作摘要：如「请求 ×2 / 响应 ×1」 */
-function actionSummary(rule: HeaderRule): string {
-  const req = rule.actions.filter((a) => a.target === "request").length;
-  const resp = rule.actions.filter((a) => a.target === "response").length;
-  return [req > 0 ? `请求 ×${req}` : "", resp > 0 ? `响应 ×${resp}` : ""]
-    .filter(Boolean)
-    .join(" / ");
 }
 
 export function HeadersTool(): React.ReactNode {
@@ -285,7 +268,7 @@ function RuleRow(props: {
           {rule.name || "未命名规则"}
         </span>
         <span className="rule-sub">
-          {patternsLabel(rule)} · {actionSummary(rule)}
+          {describeCondition(rule.condition)} · {describeActions(rule)}
         </span>
       </button>
       <button

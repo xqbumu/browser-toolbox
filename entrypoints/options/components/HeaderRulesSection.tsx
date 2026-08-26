@@ -8,6 +8,8 @@
 import { useEffect, useState } from "react";
 import { Button, MessagePlugin, Switch } from "tdesign-react";
 import {
+  describeActions,
+  describeCondition,
   newHeaderRule,
   validateHeaderRule,
   type HeaderRule,
@@ -125,10 +127,10 @@ export function HeaderRulesSection() {
               <span className="rule-name">{rule.name || "未命名规则"}</span>
               <span
                 className="rule-sub"
-                title={(rule.condition.urlFilters ?? []).join(", ")}
+                title={describeCondition(rule.condition)}
               >
-                {(rule.condition.urlFilters ?? []).join(" , ")} ·{" "}
-                {rule.actions.length} 个动作
+                {describeCondition(rule.condition)} ·{" "}
+                {describeActions(rule)}
               </span>
             </div>
             <div className="rule-ops">

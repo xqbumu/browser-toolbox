@@ -4,11 +4,9 @@
  * - popup 侧：对当前页 URL 预判规则命中（与引擎行为保持一致）。
  * 语义与 Chrome match pattern 对齐，另接受 `*` / `<all_urls>` 作为全匹配。
  */
-import type {
-  HeaderResourceType,
+import type { UrlMatchItem, HeaderResourceType,
   HeaderRule,
-  HeaderRuleCondition,
-} from "@/types/headers";
+  HeaderRuleCondition, } from "@/types/headers";
 
 /** 缓存已编译的 pattern → RegExp，避免每请求重复编译 */
 const regexpCache = new Map<string, RegExp | null>();
@@ -61,15 +59,39 @@ export function urlMatchesPattern(url: string, pattern: string): boolean {
 }
 
 /** 条件整体是否命中（URL + 方法 + 资源类型） */
+/** 单条匹配规则是否命中 */
+function matchOne(item: UrlMatchItem, url: string): boolean {
+  const v = item.value?.trim() ?? "";
+  if (!v) return false;
+  switch (item.matchType) {
+    case "contains":
+      return url.includes(v);
+    case "regex":
+      try {
+        return new RegExp(v, "i").test(url);
+      } catch {
+        return false;
+      }
+    default:
+      return urlMatchesPattern(url, v);
+  }
+}
+
+/** 条件组任一命中即生效（OR） */
+export function conditionMatchesUrl(
+  condition: HeaderRuleCondition,
+  url: string,
+): boolean {
+  return (condition.matches ?? []).some((m) => matchOne(m, url));
+}
+
 export function conditionMatches(
   condition: HeaderRuleCondition,
   url: string,
   method?: string,
   resourceType?: HeaderResourceType,
 ): boolean {
-  const patterns = condition.urlFilters ?? [];
-  if (patterns.length === 0) return false;
-  if (!patterns.some((p) => urlMatchesPattern(url, p))) return false;
+  if (!conditionMatchesUrl(condition, url)) return false;
   if (condition.methods?.length && (!method || !condition.methods.includes(method.toUpperCase()))) {
     return false;
   }
