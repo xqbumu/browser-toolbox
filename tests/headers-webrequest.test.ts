@@ -163,3 +163,23 @@ describe("pickActions", () => {
     expect(pickActions(rules, "https://x.com/", "request", "GET")).toEqual([]);
   });
 });
+
+describe("pickActions 排除域名", () => {
+  it("命中排除域名时不返回任何动作", () => {
+    const r = rule({
+      condition: {
+        matches: [{ matchType: "pattern", value: "*://api.example.com/*" }],
+        excludeDomains: ["*.ads.com"],
+      },
+      actions: [{ target: "request", op: "set", name: "X", value: "1" }],
+    });
+    const hit = pickActions([r], "https://api.example.com/x", "request");
+    const excluded = pickActions(
+      [r],
+      "https://sub.ads.com/x?back=https://api.example.com/x",
+      "request",
+    );
+    expect(hit.length).toBe(1);
+    expect(excluded.length).toBe(0);
+  });
+});

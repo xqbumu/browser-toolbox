@@ -1,0 +1,33 @@
+/* 暗色主题：TDesign 未随包提供 dark.css，这里以核心令牌覆盖实现。
+ * 仅覆盖最常用的页面/容器/文字/边框/品牌令牌，组件其余令牌沿用亮色默认值，
+ * 如需更完整可后续补充。切换由 <html data-theme="dark"> 触发。 */
+[data-theme="dark"] {
+  --td-bg-color-page: #181818;
+  --td-bg-color-container: #242424;
+  --td-bg-color-container-hover: #2e2e2e;
+  --td-bg-color-container-active: #3a3a3a;
+  --td-bg-color-container-disabled: #1f1f1f;
+  --td-bg-color-specialcomponent: #242424;
+  --td-component-stroke: #3a3a3a;
+  --td-component-border: #424242;
+  --td-border-level-1-color: #424242;
+  --td-border-level-2-color: #4b4b4b;
+  --td-text-color-primary: rgba(255, 255, 255, 0.9);
+  --td-text-color-secondary: rgba(255, 255, 255, 0.6);
+  --td-text-color-placeholder: rgba(255, 255, 255, 0.4);
+  --td-text-color-disabled: rgba(255, 255, 255, 0.3);
+  --td-text-color-anti: rgba(0, 0, 0, 0.9);
+  --td-brand-color: #4582e6;
+  --td-brand-color-hover: #5b92ea;
+  --td-brand-color-active: #3a76d9;
+  --td-brand-color-light: rgba(69, 130, 230, 0.2);
+  --td-brand-color-light-active: rgba(69, 130, 230, 0.3);
+  --td-mask-active: rgba(0, 0, 0, 0.6);
+  --td-scrollbar-color-thumb: rgba(255, 255, 255, 0.2);
+  --td-scrollbar-color-track: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] body {
+  background: var(--td-bg-color-page);
+  color: var(--td-text-color-primary);
+}

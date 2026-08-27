@@ -6,8 +6,12 @@
  */
 import { useEffect, useState } from "react";
 import { Button, MessagePlugin, Switch, Tag } from "tdesign-react";
-import type { HeaderRule } from "@/types/headers";
-import { describeActions, describeCondition, newHeaderRule } from "@/types/headers";
+import type { HeaderGroup, HeaderRule } from "@/types/headers";
+import {
+  describeActions,
+  describeCondition,
+  newHeaderRule,
+} from "@/types/headers";
 import { FilterIcon } from "tdesign-icons-react";
 import { ConfirmDialog, EmptyState } from "@/ui/kit";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
@@ -34,6 +38,7 @@ export function HeadersTool(): React.ReactNode {
   const [view, setView] = useState<"list" | "edit">("list");
   const [masterOn, setMasterOn] = useState(true);
   const [editing, setEditing] = useState<HeaderRule | null>(null);
+  const [groups, setGroups] = useState<HeaderGroup[]>([]);
 
   useEffect(() => {
     void (async () => {
@@ -43,9 +48,12 @@ export function HeadersTool(): React.ReactNode {
           currentWindow: true,
         });
         setTabUrl(tabs[0]?.url ?? null);
-        setRules(
-          await request<HeaderRule[]>({ type: "HEADERS_LIST", payload: {} }),
-        );
+        const [rulesList, groupsList] = await Promise.all([
+          request<HeaderRule[]>({ type: "HEADERS_LIST", payload: {} }),
+          request<HeaderGroup[]>({ type: "GROUPS_LIST", payload: {} }),
+        ]);
+        setRules(rulesList);
+        setGroups(groupsList);
       } catch {
         // 拉取失败保持空态
       } finally {
@@ -136,6 +144,7 @@ export function HeadersTool(): React.ReactNode {
       <div className="headers-panel">
         <HeaderRuleEditor
           draft={editing}
+          groups={groups}
           onChange={setEditing}
           onSave={save}
           onCancel={() => {
@@ -199,6 +208,7 @@ export function HeadersTool(): React.ReactNode {
               <RuleRow
                 key={rule.id}
                 rule={rule}
+                groups={groups}
                 badge
                 onToggle={(enabled) => void toggle(rule.id, enabled)}
                 onEdit={() => startEdit(rule)}
@@ -215,6 +225,7 @@ export function HeadersTool(): React.ReactNode {
           {others.map((rule) => (
             <RuleRow
               key={rule.id}
+                groups={groups}
               rule={rule}
               onToggle={(enabled) => void toggle(rule.id, enabled)}
               onEdit={() => startEdit(rule)}
@@ -242,12 +253,16 @@ export function HeadersTool(): React.ReactNode {
 
 function RuleRow(props: {
   rule: HeaderRule;
+  groups: HeaderGroup[];
   badge?: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
 }): React.ReactNode {
   const { rule } = props;
+  const groupName = rule.groupId
+    ? props.groups.find((g) => g.id === rule.groupId)?.name
+    : undefined;
   return (
     <div className={`rule-row${rule.enabled ? "" : " disabled"}`}>
       <label className="switch">
@@ -265,6 +280,7 @@ function RuleRow(props: {
       >
         <span className="rule-name">
           {props.badge && <span className="badge">当前页</span>}
+          {groupName && <span className="badge group">{groupName}</span>}
           {rule.name || "未命名规则"}
         </span>
         <span className="rule-sub">

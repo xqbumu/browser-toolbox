@@ -5,13 +5,10 @@
  * - 固定弹窗高度，切换工具时无布局跳动，内容区独立滚动。
  */
 import { useEffect, useState } from "react";
-import {
-  ArrowLeftIcon,
-  DashboardIcon,
-  SettingIcon,
-} from "tdesign-icons-react";
+import { ArrowLeftIcon, DashboardIcon, SettingIcon } from "tdesign-icons-react";
 import { Button, Tooltip } from "tdesign-react";
 import { TOOLS } from "./tools";
+import { ThemeToggle } from "@/ui/theme-toggle";
 
 /** 记住上次激活的工具：localStorage 同步读取，避免打开时闪回默认工具 */
 const LAST_TOOL_KEY = "popup:lastToolId";
@@ -106,14 +103,13 @@ export default function App() {
         </div>
 
         <div className="tool-rail-footer">
+          <ThemeToggle />
           {/* 统一设置入口：随激活工具变化（无设置的工具回退为打开管理页） */}
           <Button
             shape="circle"
             variant="text"
             theme={showSettings ? "primary" : "default"}
-            title={
-              active?.settings ? `${active.label}设置` : "打开管理页"
-            }
+            title={active?.settings ? `${active.label}设置` : "打开管理页"}
             onClick={() => {
               if (active?.settings) setShowSettings((v) => !v);
               else void browser.runtime.openOptionsPage();
@@ -149,9 +145,7 @@ export default function App() {
             {active.settings()}
           </>
         ) : (
-          <>
-            {active?.render()}
-          </>
+          <>{active?.render()}</>
         )}
       </main>
     </div>

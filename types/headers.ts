@@ -62,6 +62,8 @@ export interface HeaderRuleCondition {
   resourceTypes?: HeaderResourceType[];
   /** HTTP 方法白名单（大写）；缺省 = 全部 */
   methods?: string[];
+  /** 排除域名列表（每行一域，支持 *.example.com 通配写法）；命中即跳过本规则 */
+  excludeDomains?: string[];
 }
 
 /** 规则动作类型：改写头部 / 阻止请求 / 重定向 */
@@ -78,10 +80,36 @@ export interface HeaderRule {
   redirectTo?: string;
   /** 备注（可选，列表 tooltip 与编辑器展示） */
   comment?: string;
+  /** 所属分组 id；缺省 = 隐式「未分组」，等价 groupId=undefined */
+  groupId?: string;
+  /** 排序权重；越大越靠后应用（同头冲突时后写者生效）；缺省 0 */
+  order?: number;
   condition: HeaderRuleCondition;
   actions: HeaderAction[];
   createdAt: number;
   updatedAt: number;
+}
+
+export interface HeaderGroup {
+  id: string;
+  name: string;
+  enabled: boolean;
+  createdAt: number;
+}
+
+/** 未分组规则的隐式组名（groupId === undefined 时显示） */
+export const IMPLICIT_GROUP_LABEL = "未分组";
+
+export function newHeaderGroup(
+  name = "新建分组",
+  now = Date.now(),
+): HeaderGroup {
+  return {
+    id: `group-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    enabled: true,
+    createdAt: now,
+  };
 }
 
 /** 创建一条空白规则（供编辑器新建） */
@@ -289,7 +317,10 @@ export function describeCondition(condition: HeaderRuleCondition): string {
     return v;
   };
   const first = label(ms[0]!);
-  return ms.length > 1 ? `${first} 等 ${ms.length} 组` : first;
+  let base = ms.length > 1 ? `${first} 等 ${ms.length} 组` : first;
+  const ex = condition.excludeDomains?.filter((d) => d.trim()).length ?? 0;
+  if (ex > 0) base += ` · 排除${ex}域`;
+  return base;
 }
 
 /** 规则动作类型的短标签 */

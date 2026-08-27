@@ -12,6 +12,7 @@ import {
   validateHeaderRule,
   type HeaderRule,
 } from "@/types/headers";
+import { isModHeaderExport, parseModHeader } from "@/core/headers/modheader";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
 
 async function request<T>(msg: PopupRequest): Promise<T> {
@@ -42,7 +43,26 @@ export function HeaderImportExport({
       return;
     }
     const arr = Array.isArray(parsed) ? parsed : [parsed];
-    // 先规范化（兼容旧 urlFilter 单值），再逐条校验，丢弃无效规则
+    // ModHeader 导出：整体转换为本规则后再走统一校验
+    if (isModHeaderExport(parsed)) {
+      const converted = parseModHeader(parsed).map((r) => migrateHeaderRule(r));
+      const valid: HeaderRule[] = [];
+      let invalidCount = 0;
+      for (const item of converted) {
+        if (validateHeaderRule(item).length === 0) valid.push(item);
+        else invalidCount += 1;
+      }
+      if (valid.length === 0) {
+        void MessagePlugin.error({
+          content: "没有可导入的有效规则",
+          duration: 3000,
+        });
+        return;
+      }
+      await commitImport(valid, invalidCount);
+      return;
+    }
+    // 本工具格式：先规范化（兼容旧 urlFilter 单值），再逐条校验，丢弃无效规则
     const valid: HeaderRule[] = [];
     let invalidCount = 0;
     for (const item of arr) {
@@ -57,6 +77,13 @@ export function HeaderImportExport({
       });
       return;
     }
+    await commitImport(valid, invalidCount);
+  }
+
+  async function commitImport(
+    valid: HeaderRule[],
+    invalidCount: number,
+  ): Promise<void> {
     try {
       const all = await request<HeaderRule[]>({
         type: "HEADERS_IMPORT",
@@ -131,6 +158,10 @@ export function HeaderImportExport({
               e.target.value = "";
             }}
           />
+          <p className="hint">
+            支持本工具导出 JSON 与 ModHeader 配置（自动识别；ModHeader 每个
+            profile 转为一条规则）
+          </p>
           <p className="hint">支持单条对象或对象数组；导入后立即生效。</p>
         </div>
       )}

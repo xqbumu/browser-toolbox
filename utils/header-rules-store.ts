@@ -3,7 +3,7 @@
  * 每次写操作后广播 __HEADER_RULES_CHANGED__，background 收到即重建引擎
  * （DNR 动态规则 / MV2 webRequest 缓存）；storage.onChanged 作为兜底监听。
  */
-import type { HeaderRule } from "@/types/headers";
+import type { HeaderRule, HeaderGroup } from "@/types/headers";
 import { createLogger } from "@/utils/logger";
 import { genId } from "@/utils/helpers";
 
@@ -106,4 +106,68 @@ export async function isHeaderMasterEnabled(): Promise<boolean> {
 export async function setHeaderMasterEnabled(enabled: boolean): Promise<void> {
   await browser.storage.local.set({ [MASTER_KEY]: enabled });
   broadcastChanged();
+}
+
+// ---- 分组 CRUD ----
+
+const GROUPS_KEY = "headerGroups";
+
+export interface GroupsChangedPush {
+  type: "__HEADER_GROUPS_CHANGED__";
+}
+
+async function readGroups(): Promise<HeaderGroup[]> {
+  const result = await browser.storage.local.get(GROUPS_KEY);
+  const groups = result[GROUPS_KEY] as HeaderGroup[] | undefined;
+  return Array.isArray(groups) ? groups : [];
+}
+
+async function writeGroups(groups: HeaderGroup[]): Promise<HeaderGroup[]> {
+  await browser.storage.local.set({ [GROUPS_KEY]: groups });
+  broadcastGroupsChanged();
+  return groups;
+}
+
+function broadcastGroupsChanged(): void {
+  const push: GroupsChangedPush = { type: "__HEADER_GROUPS_CHANGED__" };
+  browser.runtime.sendMessage(push).catch(() => {});
+}
+
+export async function listGroups(): Promise<HeaderGroup[]> {
+  return readGroups();
+}
+
+export async function saveGroup(group: HeaderGroup): Promise<HeaderGroup> {
+  const groups = await readGroups();
+  const idx = groups.findIndex((g) => g.id === group.id);
+  if (idx >= 0) {
+    groups[idx] = group;
+  } else {
+    groups.push(group);
+  }
+  await writeGroups(groups);
+  return group;
+}
+
+export async function deleteGroup(id: string): Promise<void> {
+  const groups = await readGroups();
+  await writeGroups(groups.filter((g) => g.id !== id));
+  // 删除组后，成员规则 groupId 归 undefined（未分组）
+  const rules = await readAll();
+  let changed = false;
+  for (const rule of rules) {
+    if (rule.groupId === id) {
+      rule.groupId = undefined;
+      changed = true;
+    }
+  }
+  if (changed) await writeAll(rules);
+}
+
+export async function toggleGroup(id: string, enabled: boolean): Promise<void> {
+  const groups = await readGroups();
+  const group = groups.find((g) => g.id === id);
+  if (!group) return;
+  group.enabled = enabled;
+  await writeGroups(groups);
 }

@@ -9,6 +9,7 @@ import { BrowseIcon, DeleteIcon } from "tdesign-icons-react";
 import type { ScreenshotListItem, ScreenshotRecord } from "@/types/history";
 import type { PopupRequest, PopupResponse } from "@/types/messages";
 import { ConfirmDialog, EmptyState } from "@/ui/kit";
+import { ThemeToggle } from "@/ui/theme-toggle";
 import { PreviewModal } from "@/entrypoints/popup/components/PreviewModal";
 
 async function request<T>(msg: PopupRequest): Promise<T> {
@@ -140,6 +141,7 @@ export default function App() {
           )}
         </h1>
         <div className="page-actions">
+          <ThemeToggle />
           <Input
             placeholder="搜索文件名 / 标题 / 域名"
             clearable

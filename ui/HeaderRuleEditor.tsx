@@ -17,7 +17,9 @@ import {
 import { CloseIcon, PlusIcon } from "tdesign-icons-react";
 import {
   validateHeaderRule,
+  IMPLICIT_GROUP_LABEL,
   type HeaderAction,
+  type HeaderGroup,
   type UrlMatchItem,
   type UrlMatchType,
   type HeaderOp,
@@ -44,6 +46,7 @@ const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 
 export function HeaderRuleEditor(props: {
   draft: HeaderRule;
+  groups: HeaderGroup[];
   onChange: (rule: HeaderRule) => void;
   onSave: () => Promise<void> | void;
   onCancel: () => void;
@@ -105,6 +108,22 @@ export function HeaderRuleEditor(props: {
           value={draft.name}
           placeholder="如：改写 API 签名头"
           onChange={(v) => patch({ name: String(v ?? "") })}
+        />
+      </div>
+
+      <div className="field">
+        <span className="field-label">所属分组</span>
+        <Select
+          value={draft.groupId ?? ""}
+          onChange={(v) => patch({ groupId: v === "" ? undefined : String(v) })}
+          options={[
+            { label: IMPLICIT_GROUP_LABEL, value: "" },
+            ...props.groups.map((g) => ({
+              label: g.name + (g.enabled ? "" : "（已停用）"),
+              value: g.id,
+            })),
+          ]}
+          size="small"
         />
       </div>
 
@@ -213,6 +232,25 @@ export function HeaderRuleEditor(props: {
           添加匹配条件
         </Button>
       </div>
+
+      <details className="advanced exclude">
+        <summary>排除域名（可选）</summary>
+        <textarea
+          className="exclude-area"
+          rows={3}
+          placeholder={"每行一个域名，支持 *.example.com 通配\nads.example.com"}
+          value={(draft.condition.excludeDomains ?? []).join("\n")}
+          onChange={(e) =>
+            patchCondition({
+              excludeDomains: String(e.target.value ?? "")
+                .split("\n")
+                .map((s) => s.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+        <span className="hint">命中以下任意域名的请求将跳过本规则</span>
+      </details>
 
       <div className="field">
         <span className="field-label">HTTP 方法（不选 = 不限）</span>

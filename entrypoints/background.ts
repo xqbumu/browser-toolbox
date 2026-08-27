@@ -36,10 +36,14 @@ import type { ScreenshotRecord } from "@/types/history";
 import { createHeaderEngine, type HeaderEngine } from "@/core/headers/engine";
 import {
   deleteHeaderRule,
+  deleteGroup,
   importHeaderRules,
   listHeaderRules,
+  listGroups,
   saveHeaderRule,
+  saveGroup,
   toggleHeaderRule,
+  toggleGroup,
 } from "@/utils/header-rules-store";
 
 const log = createLogger("background");
@@ -327,6 +331,29 @@ async function handleRequest(
       const all = await importHeaderRules(msg.payload.rules, msg.payload.mode);
       await requestSync("规则导入");
       return { ok: true, data: all };
+    }
+
+    case "GROUPS_LIST":
+      return { ok: true, data: await listGroups() };
+
+    case "GROUPS_SAVE": {
+      const saved = await saveGroup(msg.payload.group);
+      return { ok: true, data: saved };
+    }
+
+    case "GROUPS_DELETE": {
+      await deleteGroup(msg.payload.id);
+      await requestSync("分组删除");
+      return { ok: true, data: { deleted: msg.payload.id } };
+    }
+
+    case "GROUPS_TOGGLE": {
+      await toggleGroup(msg.payload.id, msg.payload.enabled);
+      await requestSync("分组切换");
+      return {
+        ok: true,
+        data: { id: msg.payload.id, enabled: msg.payload.enabled },
+      };
     }
 
     default: {

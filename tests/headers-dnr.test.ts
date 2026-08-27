@@ -176,3 +176,34 @@ describe("migrateHeaderRule：三代形态归一", () => {
     ]);
   });
 });
+
+describe("toDnrRules 排除域名", () => {
+  it("excludeDomains 映射为 excludedRequestDomains，*. 通配被剥离", () => {
+    const out = toDnrRules([
+      rule({
+        condition: {
+          matches: [{ matchType: "pattern", value: "*://api.example.com/*" }],
+          excludeDomains: ["*.ads.com", "tracker.net"],
+        },
+        actions: [{ ...setA }],
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.condition.excludedRequestDomains).toEqual([
+      "ads.com",
+      "tracker.net",
+    ]);
+  });
+});
+
+describe("toDnrRules 排序权重", () => {
+  it("order 越大 priority 越高（同头冲突后写者生效）", () => {
+    const out = toDnrRules([
+      rule({ order: 0, actions: [{ ...setA }] }),
+      rule({ order: 5, actions: [{ ...setA }] }),
+    ]);
+    const priorities = out.map((r) => r.priority);
+    expect(priorities.every((p) => p > 0)).toBe(true);
+    expect(Math.max(...priorities)).toBe(1 + 5);
+  });
+});

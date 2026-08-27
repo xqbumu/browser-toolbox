@@ -4,7 +4,9 @@ import App from './App';
 import 'tdesign-react/es/style/index.css';
 import './style.css';
 import '@/ui/tool-ui.css';
+import '@/ui/dark.css';
 
+void import('@/ui/theme').then(m=>m.applyTheme());
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

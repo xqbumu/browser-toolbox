@@ -4,9 +4,12 @@
  * - popup 侧：对当前页 URL 预判规则命中（与引擎行为保持一致）。
  * 语义与 Chrome match pattern 对齐，另接受 `*` / `<all_urls>` 作为全匹配。
  */
-import type { UrlMatchItem, HeaderResourceType,
+import type {
+  UrlMatchItem,
+  HeaderResourceType,
   HeaderRule,
-  HeaderRuleCondition, } from "@/types/headers";
+  HeaderRuleCondition,
+} from "@/types/headers";
 
 /** 缓存已编译的 pattern → RegExp，避免每请求重复编译 */
 const regexpCache = new Map<string, RegExp | null>();
@@ -85,6 +88,26 @@ export function conditionMatchesUrl(
   return (condition.matches ?? []).some((m) => matchOne(m, url));
 }
 
+/** 命中排除域名列表则跳过（通配 *.example.com 等价于裸域 + 其子域） */
+export function isDomainExcluded(
+  condition: HeaderRuleCondition,
+  url: string,
+): boolean {
+  const ex = condition.excludeDomains;
+  if (!ex || ex.length === 0) return false;
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return ex.some((d) => {
+    const base = d.startsWith("*.", 0) ? d.slice(2) : d.trim();
+    if (!base) return false;
+    return host === base || host.endsWith("." + base);
+  });
+}
+
 export function conditionMatches(
   condition: HeaderRuleCondition,
   url: string,
@@ -92,7 +115,10 @@ export function conditionMatches(
   resourceType?: HeaderResourceType,
 ): boolean {
   if (!conditionMatchesUrl(condition, url)) return false;
-  if (condition.methods?.length && (!method || !condition.methods.includes(method.toUpperCase()))) {
+  if (
+    condition.methods?.length &&
+    (!method || !condition.methods.includes(method.toUpperCase()))
+  ) {
     return false;
   }
   if (

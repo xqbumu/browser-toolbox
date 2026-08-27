@@ -850,3 +850,79 @@ ul.error-list li::marker {
 .action-line .sel-op {
   width: 84px;
 }
+
+/* 规则所属分组徽标 */
+.badge.group {
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+  border-color: transparent;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 分组管理面板 */
+.groups-panel {
+  border: 1px solid var(--td-component-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+.groups-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.group-create {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.group-input,
+.group-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--td-component-border);
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font-size: 13px;
+}
+.group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.group-row .group-name-input {
+  flex: 1;
+}
+.group-empty {
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+}
+
+/* 排除域名编辑区 */
+.exclude-area {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--td-component-border);
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font-size: 13px;
+  font-family: var(--td-font-family-mono, monospace);
+  resize: vertical;
+}

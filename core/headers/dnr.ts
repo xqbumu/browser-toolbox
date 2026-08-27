@@ -24,6 +24,7 @@ export interface DnrLikeRule {
     regexFilter?: string;
     resourceTypes?: string[];
     requestMethods?: string[];
+    excludedRequestDomains?: string[];
   };
   action:
     | {
@@ -112,6 +113,13 @@ function buildCondition(
     ...(rule.condition.methods?.length
       ? { requestMethods: rule.condition.methods.map((m) => m.toLowerCase()) }
       : {}),
+    ...(rule.condition.excludeDomains?.length
+      ? {
+          excludedRequestDomains: rule.condition.excludeDomains
+            .map((d) => (d.startsWith("*.", 0) ? d.slice(2) : d.trim()))
+            .filter(Boolean),
+        }
+      : {}),
   };
 }
 
@@ -146,6 +154,9 @@ export function toDnrRules(
         ? rule.kind
         : "headers";
 
+    // 排序权重 → DNR 优先级（同头冲突时后写者生效，与 MV2 行为一致）
+    const priority = 1 + (rule.order ?? 0);
+
     // headers 按方向拆分；cancel/redirect 与方向无关，仅一条/条件
     const headerGroups: {
       key: "req" | "resp";
@@ -153,8 +164,14 @@ export function toDnrRules(
     }[] =
       kind === "headers"
         ? [
-            { key: "req", actions: rule.actions.filter((a) => a.target === "request") },
-            { key: "resp", actions: rule.actions.filter((a) => a.target === "response") },
+            {
+              key: "req",
+              actions: rule.actions.filter((a) => a.target === "request"),
+            },
+            {
+              key: "resp",
+              actions: rule.actions.filter((a) => a.target === "response"),
+            },
           ]
         : [];
 
@@ -164,7 +181,7 @@ export function toDnrRules(
         if (kind === "cancel") {
           out.push({
             id: nextId++,
-            priority: 1,
+            priority,
             condition,
             action: { type: "block" },
           });
@@ -172,7 +189,7 @@ export function toDnrRules(
           // regex 模式用 regexSubstitution 引用捕获组；其余为固定目标
           out.push({
             id: nextId++,
-            priority: 1,
+            priority,
             condition,
             action: {
               type: "redirect",
@@ -191,7 +208,7 @@ export function toDnrRules(
       for (const urlCond of urlConds) {
         out.push({
           id: nextId++,
-          priority: 1,
+          priority,
           condition: buildCondition(rule, urlCond),
           action: {
             type: "modifyHeaders",

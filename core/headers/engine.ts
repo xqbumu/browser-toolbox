@@ -8,11 +8,31 @@
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
 import { DNR_START_ID, toDnrRules } from "./dnr";
 import { applyHeaderActions, pickActions } from "./webrequest";
-import { conditionMatchesUrl } from "./match";
-import { isHeaderMasterEnabled, listHeaderRules } from "@/utils/header-rules-store";
+import { conditionMatchesUrl, isDomainExcluded } from "./match";
+import {
+  isHeaderMasterEnabled,
+  listHeaderRules,
+  listGroups,
+} from "@/utils/header-rules-store";
 import { createLogger } from "@/utils/logger";
 
 const log = createLogger("header-engine");
+
+/** 筛选实际生效的规则：rule.enabled 且所属分组未停用（无 groupId 视为始终启用） */
+async function listEffectiveRules(): Promise<HeaderRule[]> {
+  const [allRules, groups] = await Promise.all([
+    listHeaderRules(),
+    listGroups(),
+  ]);
+  const disabledGroups = new Set(
+    groups.filter((g) => !g.enabled).map((g) => g.id),
+  );
+  return allRules
+    .filter(
+      (r) => r.enabled && (r.groupId == null || !disabledGroups.has(r.groupId)),
+    )
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
 
 export type HeaderEngineKind = "dnr" | "webrequest" | null;
 
@@ -60,7 +80,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       kind,
       async sync(): Promise<void> {
         const masterOn = await isHeaderMasterEnabled();
-        const rules = masterOn ? await listHeaderRules() : [];
+        const rules = masterOn ? await listEffectiveRules() : [];
         const next = toDnrRules(rules);
         // 仅清理本引擎 id 区间内的动态规则，避免误删其他来源
         const existing = await new Promise<{ id: number }[]>((resolve) =>
@@ -149,7 +169,11 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     url: string,
   ): { cancel?: boolean; redirectUrl?: string } | undefined {
     for (const rule of cancelRules) {
-      if (conditionMatchesUrl(rule.condition, url)) return { cancel: true };
+      if (
+        conditionMatchesUrl(rule.condition, url) &&
+        !isDomainExcluded(rule.condition, url)
+      )
+        return { cancel: true };
     }
     for (const rule of redirectRules) {
       const mt = rule.condition.matchType ?? "pattern";
@@ -158,13 +182,16 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       if (mt === "regex") {
         try {
           const re = new RegExp(rule.condition.urlValue ?? "", "i");
-          if (re.test(url)) {
+          if (re.test(url) && !isDomainExcluded(rule.condition, url)) {
             return { redirectUrl: url.replace(re, to) };
           }
         } catch {
           // 非法正则不处理
         }
-      } else if (conditionMatchesUrl(rule.condition, url)) {
+      } else if (
+        conditionMatchesUrl(rule.condition, url) &&
+        !isDomainExcluded(rule.condition, url)
+      ) {
         // pattern/contains：固定目标（要求绝对地址，校验层已保证）
         return { redirectUrl: to };
       }
@@ -172,20 +199,26 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     return undefined;
   }
 
-  const onBeforeRequest = (details: { url: string }): { cancel?: boolean; redirectUrl?: string } | undefined => {
+  const onBeforeRequest = (details: {
+    url: string;
+  }): { cancel?: boolean; redirectUrl?: string } | undefined => {
     return resolveBeforeRequest(details.url);
   };
 
   const wr = browser.webRequest as unknown as {
     onBeforeRequest: {
       addListener: (
-        cb: (details: { url: string }) =>
-          | { cancel?: boolean; redirectUrl?: string }
-          | undefined,
+        cb: (details: {
+          url: string;
+        }) => { cancel?: boolean; redirectUrl?: string } | undefined,
         filter: { urls: string[] },
         extra: string[],
       ) => void;
-      removeListener: (cb: (details: { url: string }) => { cancel?: boolean; redirectUrl?: string } | undefined) => void;
+      removeListener: (
+        cb: (details: {
+          url: string;
+        }) => { cancel?: boolean; redirectUrl?: string } | undefined,
+      ) => void;
     };
     onBeforeSendHeaders: {
       addListener: (
@@ -204,11 +237,9 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       removeListener: (cb: typeof onHeadersReceived) => void;
     };
   };
-  wr.onBeforeRequest.addListener(
-    onBeforeRequest,
-    { urls: ["<all_urls>"] },
-    ["blocking"],
-  );
+  wr.onBeforeRequest.addListener(onBeforeRequest, { urls: ["<all_urls>"] }, [
+    "blocking",
+  ]);
   wr.onBeforeSendHeaders.addListener(
     onBeforeSendHeaders,
     { urls: ["<all_urls>"] },
@@ -223,10 +254,10 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
   return {
     kind,
     async sync(): Promise<void> {
-      const all = await listHeaderRules();
+      const all = await listEffectiveRules();
       const headersOnly: HeaderRule[] = [];
       enabled = [];
-      for (const r of all.filter((r) => r.enabled)) {
+      for (const r of all) {
         if ((r.kind ?? "headers") === "headers") {
           enabled.push(r);
           headersOnly.push(r);

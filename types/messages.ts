@@ -10,7 +10,7 @@ import type {
   BatchResult,
 } from "./capture";
 import type { CaptureConfig } from "./config";
-import type { HeaderRule } from "./headers";
+import type { HeaderRule, HeaderGroup } from "./headers";
 
 // ---- 取消粒度 / 整页分阶段 / toast 种类（P0 优化） ----
 
@@ -102,7 +102,12 @@ export type PopupRequest =
   | {
       type: "HEADERS_IMPORT";
       payload: { rules: HeaderRule[]; mode: "merge" | "replace" };
-    }; // 返回全量
+    }
+  // ---- 分组管理 ----
+  | { type: "GROUPS_LIST"; payload: Record<string, never> }
+  | { type: "GROUPS_SAVE"; payload: { group: HeaderGroup } }
+  | { type: "GROUPS_DELETE"; payload: { id: string } }
+  | { type: "GROUPS_TOGGLE"; payload: { id: string; enabled: boolean } };
 
 // ---- background → popup（进度/结果推送） ----
 
