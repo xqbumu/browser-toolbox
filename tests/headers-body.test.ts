@@ -98,3 +98,68 @@ describe("validateHeaderRule - 响应体", () => {
     ).toHaveLength(0);
   });
 });
+
+import { rewriteResponse, type FilterSink } from "@/core/headers/body";
+
+function mockFilter(): {
+  sink: FilterSink;
+  written: string;
+  closed: boolean;
+  feed: (text: string) => void;
+  stop: () => void;
+} {
+  let buf = "";
+  const written: string[] = [];
+  let closed = false;
+  let onData: ((e: { data: ArrayBuffer }) => void) | undefined;
+  let onStop: (() => void) | undefined;
+  const decoder = new TextDecoder("utf-8");
+  const sink: FilterSink = {
+    write: (chunk: Uint8Array) => written.push(decoder.decode(chunk)),
+    close: () => {
+      closed = true;
+    },
+    ondata: { addListener: (cb) => (onData = cb) },
+    onstop: { addListener: (cb) => (onStop = cb) },
+    onerror: { addListener: () => {} },
+  };
+  return {
+    sink,
+    get written() {
+      return written.join("");
+    },
+    get closed() {
+      return closed;
+    },
+    feed: (text: string) => onData?.({ data: new TextEncoder().encode(text).buffer as ArrayBuffer }),
+    stop: () => onStop?.(),
+  };
+}
+
+describe("rewriteResponse 流式路径", () => {
+  it("文本响应按 chunk 拼装后整体改写并回写", () => {
+    const f = mockFilter();
+    rewriteResponse(f.sink, "text/html; charset=utf-8", [
+      { match: "foo", replace: "bar" },
+    ]);
+    f.feed("<p>foo</p>");
+    f.feed("<p>foo2</p>");
+    f.stop();
+    expect(f.written).toBe("<p>bar</p><p>bar2</p>");
+    expect(f.closed).toBe(true);
+  });
+  it("非文本响应直接关闭、不回写", () => {
+    const f = mockFilter();
+    rewriteResponse(f.sink, "image/png", [{ match: "x", replace: "y" }]);
+    f.feed("binary");
+    f.stop();
+    expect(f.written).toBe("");
+    expect(f.closed).toBe(true);
+  });
+  it("无动作时同样关闭、不回写", () => {
+    const f = mockFilter();
+    rewriteResponse(f.sink, "application/json", []);
+    expect(f.written).toBe("");
+    expect(f.closed).toBe(true);
+  });
+});

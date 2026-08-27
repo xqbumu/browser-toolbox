@@ -51,3 +51,43 @@ export function isTextualContentType(contentType: string | undefined): boolean {
     (ct.startsWith("application/") && ct.endsWith("+xml"))
   );
 }
+
+/** filterResponseData 注入点的最小接口（Firefox 运行时与测试 mock 均实现） */
+export interface FilterSink {
+  write: (chunk: Uint8Array) => void;
+  close: () => void;
+  ondata: { addListener: (cb: (e: { data: ArrayBuffer }) => void) => void };
+  onstop: { addListener: (cb: () => void) => void };
+  onerror: { addListener: (cb: () => void) => void };
+}
+
+/**
+ * 将响应体改写逻辑与 Firefox 运行时解耦：
+ * - 非文本类型或无动作时直接关闭，避免损坏二进制响应；
+ * - 文本类型时按 chunk 拼装成字符串，停止后统一改写并回写。
+ * 该函数为纯逻辑（依赖注入 FilterSink），便于单测覆盖流式路径。
+ */
+export function rewriteResponse(
+  filter: FilterSink,
+  contentType: string | undefined,
+  actions: BodyAction[],
+): void {
+  if (actions.length === 0 || !isTextualContentType(contentType)) {
+    filter.close();
+    return;
+  }
+  const decoder = new TextDecoder("utf-8");
+  const encoder = new TextEncoder();
+  let buf = "";
+  filter.ondata.addListener((ev) => {
+    buf += decoder.decode(ev.data, { stream: true });
+  });
+  filter.onstop.addListener(() => {
+    buf += decoder.decode();
+    filter.write(encoder.encode(applyBodyActions(buf, actions)));
+    filter.close();
+  });
+  filter.onerror.addListener(() => {
+    filter.close();
+  });
+}

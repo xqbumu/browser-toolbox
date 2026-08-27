@@ -12,7 +12,7 @@ import {
   applyQueryTransform,
   pickActions,
 } from "./webrequest";
-import { applyBodyActions, isTextualContentType } from "./body";
+import { rewriteResponse } from "./body";
 import {
   conditionMatchesUrl,
   isDomainExcluded,
@@ -196,15 +196,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     if (actions.length === 0) return;
     const frApi = (
       browser.webRequest as unknown as {
-        filterResponseData?: (id: string) => {
-          ondata: {
-            addListener: (cb: (e: { data: ArrayBuffer }) => void) => void;
-          };
-          onstop: { addListener: (cb: () => void) => void };
-          onerror: { addListener: (cb: () => void) => void };
-          write: (chunk: Uint8Array) => void;
-          close: () => void;
-        };
+        filterResponseData?: (id: string) => import("./body").FilterSink;
       }
     ).filterResponseData;
     const fr = frApi?.(details.requestId);
@@ -212,24 +204,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     const contentType = (details.responseHeaders ?? []).find(
       (h) => h.name.toLowerCase() === "content-type",
     )?.value;
-    if (!isTextualContentType(contentType)) {
-      fr.close();
-      return;
-    }
-    const decoder = new TextDecoder("utf-8");
-    const encoder = new TextEncoder();
-    let buf = "";
-    fr.ondata.addListener((ev) => {
-      buf += decoder.decode(ev.data, { stream: true });
-    });
-    fr.onstop.addListener(() => {
-      buf += decoder.decode();
-      fr.write(encoder.encode(applyBodyActions(buf, actions)));
-      fr.close();
-    });
-    fr.onerror.addListener(() => {
-      fr.close();
-    });
+    rewriteResponse(fr, contentType, actions);
   };
 
   // cancel / redirect / query 规则在 onBeforeRequest 阶段处理
