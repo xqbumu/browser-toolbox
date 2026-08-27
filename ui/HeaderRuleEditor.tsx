@@ -300,6 +300,29 @@ export function HeaderRuleEditor(props: {
             }
           />
         </div>
+        <div className="exclude-line exclude-regex">
+          <span className="exclude-label">排除正则</span>
+          <textarea
+            className="exclude-area regex"
+            rows={2}
+            placeholder={"每行一条 URL 正则\n/api/internal/.*"}
+            value={(draft.condition.excludeRegex ?? []).join("\n")}
+            onChange={(e) =>
+              patchCondition({
+                excludeRegex: String(e.target.value ?? "")
+                  .split("\n")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
+          />
+        </div>
+        {(draft.condition.excludeRegex ?? []).some((p) => p.trim()) && (
+          <Alert
+            theme="warning"
+            message="URL 正则排除仅 Firefox 全量生效；Chrome/Safari 无法表达负向过滤，该规则在这些平台不会被应用"
+          />
+        )}
       </details>
 
       <div className="field">

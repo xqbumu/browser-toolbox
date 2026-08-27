@@ -36,6 +36,8 @@ export function HeadersTool(): React.ReactNode {
   const [engineAvailable] = useState(() => detectHeaderEngine() != null);
   const [tabUrl, setTabUrl] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "edit">("list");
+  const engineKind = detectHeaderEngine();
+  const dnrLimited = engineKind === "dnr";
   const [masterOn, setMasterOn] = useState(true);
   const [editing, setEditing] = useState<HeaderRule | null>(null);
   const [groups, setGroups] = useState<HeaderGroup[]>([]);
@@ -207,6 +209,7 @@ export function HeadersTool(): React.ReactNode {
             {matched.map((rule) => (
               <RuleRow
                 key={rule.id}
+                dnrLimited={dnrLimited}
                 rule={rule}
                 groups={groups}
                 badge
@@ -225,7 +228,8 @@ export function HeadersTool(): React.ReactNode {
           {others.map((rule) => (
             <RuleRow
               key={rule.id}
-                groups={groups}
+                dnrLimited={dnrLimited}
+              groups={groups}
               rule={rule}
               onToggle={(enabled) => void toggle(rule.id, enabled)}
               onEdit={() => startEdit(rule)}
@@ -254,6 +258,7 @@ export function HeadersTool(): React.ReactNode {
 function RuleRow(props: {
   rule: HeaderRule;
   groups: HeaderGroup[];
+  dnrLimited?: boolean;
   badge?: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
@@ -263,6 +268,9 @@ function RuleRow(props: {
   const groupName = rule.groupId
     ? props.groups.find((g) => g.id === rule.groupId)?.name
     : undefined;
+  const regexLimited =
+    props.dnrLimited &&
+    (rule.condition.excludeRegex ?? []).some((p) => p.trim());
   return (
     <div className={`rule-row${rule.enabled ? "" : " disabled"}`}>
       <label className="switch">
@@ -281,6 +289,7 @@ function RuleRow(props: {
         <span className="rule-name">
           {props.badge && <span className="badge">当前页</span>}
           {groupName && <span className="badge group">{groupName}</span>}
+          {regexLimited && <span className="badge warn">仅Firefox</span>}
           {rule.name || "未命名规则"}
         </span>
         <span className="rule-sub">

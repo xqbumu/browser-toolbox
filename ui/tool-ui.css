@@ -940,3 +940,20 @@ ul.error-list li::marker {
   font-size: 12px;
   color: var(--td-text-color-secondary);
 }
+
+/* 排除正则输入（位于排除行内，需自适应宽度） */
+.exclude-regex {
+  align-items: flex-start;
+}
+.exclude-regex .exclude-area {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 平台受限降级徽标（如 URL 正则排除仅在 Firefox 生效） */
+.badge.warn {
+  background: var(--td-warning-color-light, #fff3e0);
+  color: var(--td-warning-color, #e37318);
+  border-color: transparent;
+}

@@ -16,6 +16,7 @@ import {
   conditionMatchesUrl,
   isDomainExcluded,
   isMethodOrTypeExcluded,
+  isUrlRegexExcluded,
 } from "./match";
 import {
   isHeaderMasterEnabled,
@@ -180,6 +181,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     resourceType?: HeaderResourceType,
   ): { cancel?: boolean; redirectUrl?: string } | undefined {
     for (const rule of cancelRules) {
+      if (isUrlRegexExcluded(rule.condition, url)) continue;
       if (
         conditionMatchesUrl(rule.condition, url) &&
         !isDomainExcluded(rule.condition, url) &&
@@ -188,6 +190,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
         return { cancel: true };
     }
     for (const rule of redirectRules) {
+      if (isUrlRegexExcluded(rule.condition, url)) continue;
       const to = (rule.redirectTo ?? "").trim();
       if (!to) continue;
       if (!conditionMatchesUrl(rule.condition, url)) continue;
@@ -211,6 +214,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       }
     }
     for (const rule of queryRules) {
+      if (isUrlRegexExcluded(rule.condition, url)) continue;
       if (!conditionMatchesUrl(rule.condition, url)) continue;
       if (isDomainExcluded(rule.condition, url)) continue;
       if (isMethodOrTypeExcluded(rule.condition, method, resourceType))

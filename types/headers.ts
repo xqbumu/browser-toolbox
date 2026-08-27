@@ -68,6 +68,10 @@ export interface HeaderRuleCondition {
   excludeMethods?: string[];
   /** 排除资源类型；命中即跳过本规则 */
   excludeResourceTypes?: HeaderResourceType[];
+  /** 排除 URL 正则（每行一条）；命中即跳过本规则。
+   *  注意：DNR(Chrome/Safari) 无法表达 URL 负向过滤，含此项的正则排除仅在
+   *  Firefox(MV2) 全量生效；Chrome/Safari 该规则不应用（详见引擎层降级处理）。 */
+  excludeRegex?: string[];
 }
 
 /** 规则动作类型：改写头部 / 阻止请求 / 重定向 / 改写查询参数 */
@@ -364,10 +368,12 @@ export function describeCondition(condition: HeaderRuleCondition): string {
   const exm = condition.excludeMethods?.filter((d) => d.trim()).length ?? 0;
   const exr =
     condition.excludeResourceTypes?.filter((d) => d.trim()).length ?? 0;
+  const exre = condition.excludeRegex?.filter((d) => d.trim()).length ?? 0;
   const parts: string[] = [];
   if (ex > 0) parts.push(`排除${ex}域`);
   if (exm > 0) parts.push(`排除${exm}方法`);
   if (exr > 0) parts.push(`排除${exr}类型`);
+  if (exre > 0) parts.push(`排除${exre}正则`);
   if (parts.length > 0) base += ` · ${parts.join("/")}`;
   return base;
 }

@@ -226,3 +226,25 @@ describe("applyQueryTransform", () => {
     ).toBe("not-a-url");
   });
 });
+
+describe("pickActions URL 正则排除", () => {
+  it("命中排除正则时不返回动作（仅 Firefox 全量生效）", () => {
+    const r = rule({
+      condition: {
+        matches: [{ matchType: "pattern", value: "*://api.example.com/*" }],
+        excludeRegex: ["/internal/.*"],
+      },
+      actions: [{ target: "request", op: "set", name: "X", value: "1" }],
+    });
+    expect(
+      pickActions(
+        [r],
+        "https://api.example.com/internal/secret",
+        "request",
+      ),
+    ).toHaveLength(0);
+    expect(
+      pickActions([r], "https://api.example.com/public", "request"),
+    ).toHaveLength(1);
+  });
+});

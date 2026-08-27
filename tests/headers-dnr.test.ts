@@ -287,3 +287,21 @@ describe("toDnrRules 查询参数改写", () => {
     }
   });
 });
+
+describe("toDnrRules URL 正则排除降级", () => {
+  it("含 excludeRegex 的规则在 DNR 不下发（改由 Firefox MV2 全量处理）", () => {
+    const out = toDnrRules([
+      rule({
+        condition: {
+          matches: [{ matchType: "pattern", value: "*://a.com/*" }],
+          excludeRegex: ["/internal/.*"],
+        },
+        actions: [{ ...setA }],
+      }),
+      rule({ condition: { matches: [{ matchType: "pattern", value: "*://b.com/*" }] }, actions: [{ ...setA }] }),
+    ]);
+    // 仅第二条（无排除正则）产出；第一条被跳过
+    expect(out).toHaveLength(1);
+    expect(out[0]!.condition.urlFilter).toBe("*://b.com/*");
+  });
+});

@@ -20,6 +20,7 @@ import { HeaderRuleEditor } from "@/ui/HeaderRuleEditor";
 import { HeaderImportExport } from "@/ui/HeaderImportExport";
 import { HeaderGroupsPanel } from "@/ui/HeaderGroupsPanel";
 import { ThemeToggle } from "@/ui/theme-toggle";
+import { detectHeaderEngine } from "@/core/headers/engine";
 import { ConfirmDialog } from "@/ui/kit";
 import { newHeaderGroup, type HeaderGroup } from "@/types/headers";
 
@@ -31,6 +32,7 @@ async function request<T>(msg: PopupRequest): Promise<T> {
 
 export function HeaderRulesSection() {
   const [rules, setRules] = useState<HeaderRule[]>([]);
+  const dnrLimited = detectHeaderEngine() === "dnr";
   const [groups, setGroups] = useState<HeaderGroup[]>([]);
   const [editing, setEditing] = useState<HeaderRule | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -204,7 +206,13 @@ export function HeaderRulesSection() {
                 onChange={(v) => void toggle(rule.id, Boolean(v))}
               />
               <div className="rule-meta">
-                <span className="rule-name">{rule.name || "未命名规则"}</span>
+                <span className="rule-name">
+                  {rule.name || "未命名规则"}
+                  {dnrLimited &&
+                    (rule.condition.excludeRegex ?? []).some((p) =>
+                      p.trim(),
+                    ) && <span className="badge warn">仅Firefox</span>}
+                </span>
                 <span
                   className="rule-sub"
                   title={describeCondition(rule.condition)}

@@ -9,6 +9,9 @@
  * 输出使用结构化最小类型而非 chrome 命名空间，保证 node 测试环境零依赖。
  */
 import type { HeaderRule } from "@/types/headers";
+import { createLogger } from "@/utils/logger";
+
+const log = createLogger("header-dnr");
 
 export interface DnrHeaderItem {
   header: string;
@@ -167,6 +170,14 @@ export function toDnrRules(
   let nextId = startId;
   for (const rule of rules) {
     if (!rule.enabled) continue;
+    // DNR 无法表达 URL 负向过滤：含排除正则的规则在 Chrome/Safari 不具备等价能力，
+    // 若强行下发会「漏掉排除」而错误改写，故此处整体跳过（Firefox MV2 仍全量生效）。
+    if ((rule.condition.excludeRegex ?? []).some((p) => p.trim())) {
+      log.warn(
+        `规则「${rule.name || rule.id}」含 URL 正则排除，DNR 不支持，已在 Chrome/Safari 跳过`,
+      );
+      continue;
+    }
 
     const urlConds = buildUrlConditions(rule.condition);
     const kind =

@@ -121,6 +121,24 @@ export function isMethodOrTypeExcluded(
   return false;
 }
 
+/** URL 正则排除命中则跳过（仅 Firefox MV2 全量生效；DNR 层另作降级） */
+export function isUrlRegexExcluded(
+  condition: HeaderRuleCondition,
+  url: string,
+): boolean {
+  const ex = condition.excludeRegex;
+  if (!ex || ex.length === 0) return false;
+  return ex.some((p) => {
+    const src = p.trim();
+    if (!src) return false;
+    try {
+      return new RegExp(src, "i").test(url);
+    } catch {
+      return false; // 非法正则不处理
+    }
+  });
+}
+
 export function conditionMatches(
   condition: HeaderRuleCondition,
   url: string,

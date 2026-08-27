@@ -12,6 +12,7 @@ import {
   conditionMatchesUrl,
   isDomainExcluded,
   isMethodOrTypeExcluded,
+  isUrlRegexExcluded,
 } from "./match";
 
 export interface HttpHeader {
@@ -38,6 +39,7 @@ export function pickActions(
     if (!conditionMatchesUrl(rule.condition, url)) continue;
     if (isDomainExcluded(rule.condition, url)) continue;
     if (isMethodOrTypeExcluded(rule.condition, method, resourceType)) continue;
+    if (isUrlRegexExcluded(rule.condition, url)) continue;
 
     const methods = rule.condition.methods;
     if (methods?.length) {
