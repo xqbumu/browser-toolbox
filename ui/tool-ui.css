@@ -978,3 +978,36 @@ ul.error-list li::marker {
 .action-row.body-action > .t-input {
   margin-top: 4px;
 }
+
+/* 会话级临时覆盖 */
+.badge.session {
+  background: var(--td-success-color-light, #e3f9e9);
+  color: var(--td-success-color, #2ba471);
+  border-color: transparent;
+}
+.session-text {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--td-text-color-secondary, #8a94a6);
+}
+.session-text:hover {
+  background: var(--td-bg-color-container-hover, #f3f3f3);
+  color: var(--td-success-color, #2ba471);
+}
+
+/* ---- 请求头 popup 间距校正 ---- */
+/* 顶栏（开关+计数+新建）与下方列表之间留出间隔 */
+.headers-panel .headers-topbar {
+  margin-bottom: 8px;
+}
+/* 区块标签统一为「上方 8px、下方 4px」的正值间距，覆盖前文散落的负 margin；
+   同时作用于 rules-zone 内与直接挂在 headers-panel 下的「其他规则」标签 */
+.headers-panel .section-label,
+.headers-panel > .section-label {
+  margin: 8px 0 4px;
+}

@@ -33,6 +33,28 @@ async function request<T>(msg: PopupRequest): Promise<T> {
 export function HeaderRulesSection() {
   const [rules, setRules] = useState<HeaderRule[]>([]);
   const dnrLimited = detectHeaderEngine() === "dnr";
+  // 会话级临时覆盖（仅当前会话，重启即清）
+  const [sessionOv, setSessionOv] = useState<Record<string, boolean>>({});
+  async function toggleSession(id: string): Promise<void> {
+    const has = id in sessionOv;
+    const nextOv = has ? null : !rules.find((r) => r.id === id)?.enabled;
+    const prev = sessionOv;
+    setSessionOv((m) => {
+      const copy = { ...m };
+      if (nextOv === null) delete copy[id];
+      else copy[id] = nextOv;
+      return copy;
+    });
+    try {
+      await request({
+        type: "HEADERS_SESSION_OVERRIDE",
+        payload: { id, enabled: nextOv },
+      });
+    } catch {
+      // 后台写覆盖失败：回滚本地展示
+      setSessionOv(prev);
+    }
+  }
   const [groups, setGroups] = useState<HeaderGroup[]>([]);
   const [editing, setEditing] = useState<HeaderRule | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -40,6 +62,10 @@ export function HeaderRulesSection() {
   useEffect(() => {
     void reload();
     void reloadGroups();
+    // 同步后台会话级覆盖快照（MV3 SW 重启后恢复显示）
+    void request<Record<string, boolean>>({ type: "HEADERS_SESSION_LIST" })
+      .then(setSessionOv)
+      .catch(() => {});
   }, []);
 
   async function reload(): Promise<void> {
@@ -215,6 +241,9 @@ export function HeaderRulesSection() {
                       rule.kind === "body") && (
                       <span className="badge warn">仅Firefox</span>
                     )}
+                  {rule.id in sessionOv && (
+                    <span className="badge session">临时</span>
+                  )}
                 </span>
                 <span
                   className="rule-sub"
@@ -243,6 +272,17 @@ export function HeaderRulesSection() {
                   }}
                 >
                   编辑
+                </button>
+                <button
+                  className="session-text"
+                  title={
+                    rule.id in sessionOv
+                      ? "清除会话临时覆盖"
+                      : "本次会话临时翻转启用状态"
+                  }
+                  onClick={() => void toggleSession(rule.id)}
+                >
+                  ⚡
                 </button>
                 <button
                   className="danger-text"

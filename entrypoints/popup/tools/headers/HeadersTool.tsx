@@ -56,6 +56,12 @@ export function HeadersTool(): React.ReactNode {
         ]);
         setRules(rulesList);
         setGroups(groupsList);
+        // 同步后台会话级覆盖快照（MV3 SW 重启后恢复显示）
+        setSessionOv(
+          await request<Record<string, boolean>>({
+            type: "HEADERS_SESSION_LIST",
+          }).catch(() => ({})),
+        );
       } catch {
         // 拉取失败保持空态
       } finally {
@@ -71,6 +77,29 @@ export function HeadersTool(): React.ReactNode {
       await setHeaderMasterEnabled(on);
     } catch {
       setMasterOn(prev);
+    }
+  }
+
+  // 会话级临时覆盖（仅当前会话，重启即清）：本地记录覆盖值，并通知后台引擎即时生效
+  const [sessionOv, setSessionOv] = useState<Record<string, boolean>>({});
+  async function toggleSession(id: string): Promise<void> {
+    const has = id in sessionOv;
+    const nextOv = has ? null : !rules.find((r) => r.id === id)?.enabled;
+    const prev = sessionOv;
+    setSessionOv((m) => {
+      const copy = { ...m };
+      if (nextOv === null) delete copy[id];
+      else copy[id] = nextOv;
+      return copy;
+    });
+    try {
+      await request({
+        type: "HEADERS_SESSION_OVERRIDE",
+        payload: { id, enabled: nextOv },
+      });
+    } catch {
+      // 后台写覆盖失败：回滚本地展示，避免「显示已覆盖但引擎未生效」
+      setSessionOv(prev);
     }
   }
 
@@ -194,33 +223,39 @@ export function HeadersTool(): React.ReactNode {
         </div>
       </div>
 
-      <div className={masterOn ? "rules-zone" : "rules-zone dim"}>
-        {rules.length === 0 && (
-          <EmptyState
-            icon={<FilterIcon />}
-            title="还没有请求头规则"
-            hint="点击右上角 ＋ 创建第一条"
-          />
-        )}
+      {(matched.length > 0 || rules.length === 0) && (
+        <div className={masterOn ? "rules-zone" : "rules-zone dim"}>
+          {rules.length === 0 && (
+            <EmptyState
+              icon={<FilterIcon />}
+              title="还没有请求头规则"
+              hint="点击右上角 ＋ 创建第一条"
+            />
+          )}
 
-        {matched.length > 0 && (
-          <>
-            <p className="section-label">当前页生效 · {matched.length}</p>
-            {matched.map((rule) => (
-              <RuleRow
-                key={rule.id}
-                dnrLimited={dnrLimited}
-                rule={rule}
-                groups={groups}
-                badge
-                onToggle={(enabled) => void toggle(rule.id, enabled)}
-                onEdit={() => startEdit(rule)}
-                onDelete={() => setDeleting(rule)}
-              />
-            ))}
-          </>
-        )}
-      </div>
+          {matched.length > 0 && (
+            <>
+              <p className="section-label">当前页生效 · {matched.length}</p>
+              {matched.map((rule) => (
+                <RuleRow
+                  key={rule.id}
+                  dnrLimited={dnrLimited}
+                  rule={rule}
+                  groups={groups}
+                  badge
+                  onToggle={(enabled) => void toggle(rule.id, enabled)}
+                  onEdit={() => startEdit(rule)}
+                  onDelete={() => setDeleting(rule)}
+                  sessionOverride={
+                    rule.id in sessionOv ? sessionOv[rule.id]! : null
+                  }
+                  onSessionToggle={() => void toggleSession(rule.id)}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
       {others.length > 0 && (
         <>
@@ -234,6 +269,10 @@ export function HeadersTool(): React.ReactNode {
               onToggle={(enabled) => void toggle(rule.id, enabled)}
               onEdit={() => startEdit(rule)}
               onDelete={() => setDeleting(rule)}
+              sessionOverride={
+                rule.id in sessionOv ? sessionOv[rule.id]! : null
+              }
+              onSessionToggle={() => void toggleSession(rule.id)}
             />
           ))}
         </>
@@ -263,6 +302,9 @@ function RuleRow(props: {
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** 会话级临时覆盖：true=强制启用 false=强制停用 null=清除覆盖 */
+  sessionOverride: boolean | null;
+  onSessionToggle: () => void;
 }): React.ReactNode {
   const { rule } = props;
   const groupName = rule.groupId
@@ -272,8 +314,10 @@ function RuleRow(props: {
     props.dnrLimited &&
     ((rule.condition.excludeRegex ?? []).some((p) => p.trim()) ||
       rule.kind === "body");
+  const effective =
+    props.sessionOverride === null ? rule.enabled : props.sessionOverride;
   return (
-    <div className={`rule-row${rule.enabled ? "" : " disabled"}`}>
+    <div className={`rule-row${effective ? "" : " disabled"}`}>
       <label className="switch">
         <input
           type="checkbox"
@@ -291,11 +335,26 @@ function RuleRow(props: {
           {props.badge && <span className="badge">当前页</span>}
           {groupName && <span className="badge group">{groupName}</span>}
           {regexLimited && <span className="badge warn">仅Firefox</span>}
+          {props.sessionOverride !== null && (
+            <span className="badge session">临时</span>
+          )}
           {rule.name || "未命名规则"}
         </span>
         <span className="rule-sub">
           {describeCondition(rule.condition)} · {describeActions(rule)}
         </span>
+      </button>
+      <button
+        type="button"
+        className="session-text"
+        title={
+          props.sessionOverride === null
+            ? "本次会话临时翻转启用状态"
+            : "清除会话临时覆盖"
+        }
+        onClick={props.onSessionToggle}
+      >
+        ⚡
       </button>
       <button
         type="button"

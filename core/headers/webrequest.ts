@@ -35,7 +35,8 @@ export function pickActions(
 ): HeaderAction[] {
   const out: HeaderAction[] = [];
   for (const rule of rules) {
-    if (!rule.enabled) continue;
+    // 注意：enabled 过滤已在 listEffectiveRules 完成（含会话覆盖），此处不再判断，
+    // 否则会被 pickActions 二次过滤而丢弃「会话临时启用」的禁用规则。
     if (!conditionMatchesUrl(rule.condition, url)) continue;
     if (isDomainExcluded(rule.condition, url)) continue;
     if (isMethodOrTypeExcluded(rule.condition, method, resourceType)) continue;

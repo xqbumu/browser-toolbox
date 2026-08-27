@@ -63,3 +63,94 @@ describe("ModHeader 导入兼容", () => {
     expect(parseModHeader(arr)).toHaveLength(1);
   });
 });
+
+describe("ModHeader 新版 urlConds 映射", () => {
+  const v2 = {
+    name: "ModHeader Export",
+    profiles: [
+      {
+        title: "Conditional",
+        enable: true,
+        urlConds: [
+          { type: "urls", value: ["*://api.example.com/*"] },
+          { type: "methods", value: ["GET", "post"] },
+          { type: "resourceTypes", value: ["main_frame", "xmlhttprequest"] },
+          { type: "urlFilter", op: "contains", value: "/v1/" },
+          {
+            type: "urlFilter",
+            op: "prefix",
+            value: "https://api.example.com/sec",
+          },
+        ],
+        headers: [
+          {
+            enabled: true,
+            name: "X-Token",
+            value: "abc",
+            headerType: "request",
+            op: "add",
+          },
+          {
+            enabled: true,
+            name: "X-Remove",
+            value: "",
+            headerType: "response",
+            op: "remove",
+          },
+          {
+            enabled: true,
+            name: "X-Mixed",
+            value: "m",
+            headerType: "mixed",
+            op: "modify",
+          },
+          {
+            enabled: true,
+            name: "X-Regex",
+            value: "r",
+            headerType: "request",
+            op: "add",
+          }, // 无 urlRegex 覆盖
+        ],
+      },
+    ],
+  };
+
+  it("urlConds 映射为 matches/methods/resourceTypes", () => {
+    const r = parseModHeader(v2)[0]!;
+    expect(r.condition.matches).toEqual([
+      { matchType: "pattern", value: "*://api.example.com/*" },
+      { matchType: "contains", value: "/v1/" },
+      { matchType: "regex", value: "^https://api\\.example\\.com/sec" },
+    ]);
+    expect(r.condition.methods).toEqual(["GET", "POST"]);
+    expect(r.condition.resourceTypes).toEqual(["main_frame", "xmlhttprequest"]);
+  });
+
+  it("headerType/mixed/remove 映射正确", () => {
+    const r = parseModHeader(v2)[0]!;
+    const byName = (n: string) => r.actions.filter((a) => a.name === n);
+    expect(byName("X-Token")).toEqual([
+      { target: "request", op: "set", name: "X-Token", value: "abc" },
+    ]);
+    // remove 无 value
+    expect(byName("X-Remove")).toEqual([
+      { target: "response", op: "remove", name: "X-Remove" },
+    ]);
+    // mixed → request + response 两条
+    expect(byName("X-Mixed")).toEqual([
+      { target: "request", op: "set", name: "X-Mixed", value: "m" },
+      { target: "response", op: "set", name: "X-Mixed", value: "m" },
+    ]);
+    expect(validateHeaderRule(r)).toHaveLength(0);
+  });
+
+  it("isModHeaderExport 识别 urlConds 形态", () => {
+    expect(isModHeaderExport(v2)).toBe(true);
+    expect(
+      isModHeaderExport({
+        profiles: [{ title: "x", urlConds: [], headers: [] }],
+      }),
+    ).toBe(true);
+  });
+});

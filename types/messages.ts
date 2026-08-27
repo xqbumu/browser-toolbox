@@ -100,6 +100,15 @@ export type PopupRequest =
   | { type: "HEADERS_DELETE"; payload: { id: string } }
   | { type: "HEADERS_TOGGLE"; payload: { id: string; enabled: boolean } }
   | {
+      // 会话级临时覆盖：强制启用/停用某规则（仅当前会话，重启即清）
+      type: "HEADERS_SESSION_OVERRIDE";
+      payload: { id: string; enabled: boolean | null };
+    }
+  | {
+      // 拉取当前会话级覆盖快照（用于 UI 在 SW 重启后恢复显示）
+      type: "HEADERS_SESSION_LIST";
+    }
+  | {
       type: "HEADERS_IMPORT";
       payload: { rules: HeaderRule[]; mode: "merge" | "replace" };
     }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Select } from "tdesign-react";
+import { SunnyIcon, MoonIcon, DesktopIcon } from "tdesign-icons-react";
 import {
   applyTheme,
   getThemePref,
@@ -8,11 +8,21 @@ import {
   type ThemePref,
 } from "@/ui/theme";
 
-const OPTIONS = [
-  { value: "system", label: "跟随系统" },
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
-];
+const ICON: Record<ThemePref, typeof SunnyIcon> = {
+  system: DesktopIcon,
+  light: SunnyIcon,
+  dark: MoonIcon,
+};
+const LABEL: Record<ThemePref, string> = {
+  system: "跟随系统",
+  light: "浅色",
+  dark: "深色",
+};
+const NEXT: Record<ThemePref, ThemePref> = {
+  system: "light",
+  light: "dark",
+  dark: "system",
+};
 
 export function ThemeToggle(): React.ReactNode {
   const [pref, setPref] = useState<ThemePref>("system");
@@ -28,17 +38,20 @@ export function ThemeToggle(): React.ReactNode {
     return () => browser.storage.onChanged.removeListener(sync);
   }, []);
 
+  const Icon = ICON[pref];
+  const next = NEXT[pref];
   return (
-    <Select
-      size="small"
-      value={pref}
-      options={OPTIONS}
-      onChange={(v) => {
-        const next = v as ThemePref;
+    <button
+      type="button"
+      className="theme-toggle"
+      title={`主题：${LABEL[pref]}（点击切换为${LABEL[next]}）`}
+      aria-label={`主题：${LABEL[pref]}`}
+      onClick={() => {
         setPref(next);
         void setThemePref(next);
       }}
-      style={{ width: 110 }}
-    />
+    >
+      <Icon size="18px" />
+    </button>
   );
 }

@@ -28,6 +28,58 @@ import { createLogger } from "@/utils/logger";
 
 const log = createLogger("header-engine");
 
+/**
+ * 会话级临时覆盖：强制某条规则在本浏览器会话内启用/停用，不写入持久化存储。
+ *
+ * 运行期以内存 Map 为唯一真相；同时镜像到 browser.storage.session（仅 MV3 可用），
+ * 因此 MV3 下 Service Worker 被回收再唤醒时能通过 loadSessionOverrides 恢复，
+ * 避免「覆盖静默丢失」。storage.session 在扩展重启时自动清空，契合「重启即清」语义；
+ * Firefox MV2 无 storage.session，后台页常驻故内存 Map 本身即可持久，无需镜像。
+ */
+const sessionOverrides = new Map<string, boolean>();
+const SESSION_STORE_KEY = "headerSessionOverrides";
+
+async function persistSessionOverrides(): Promise<void> {
+  const s = browser.storage?.session;
+  if (!s) return;
+  try {
+    await s.set({ [SESSION_STORE_KEY]: Object.fromEntries(sessionOverrides) });
+  } catch {
+    // Firefox MV2 等无 storage.session 时忽略
+  }
+}
+
+async function loadSessionOverrides(): Promise<void> {
+  const s = browser.storage?.session;
+  if (!s) return;
+  try {
+    const res = await s.get(SESSION_STORE_KEY);
+    const data = (res?.[SESSION_STORE_KEY] as Record<string, boolean>) ?? {};
+    for (const [k, v] of Object.entries(data)) sessionOverrides.set(k, v);
+  } catch {
+    // 忽略
+  }
+}
+
+export function setSessionOverride(
+  ruleId: string,
+  enabled: boolean | null,
+): void {
+  if (enabled === null) sessionOverrides.delete(ruleId);
+  else sessionOverrides.set(ruleId, enabled);
+  log.info(`会话覆盖：${ruleId} -> ${enabled === null ? "清除" : enabled}`);
+  void persistSessionOverrides();
+}
+
+export function getSessionOverrides(): Record<string, boolean> {
+  return Object.fromEntries(sessionOverrides);
+}
+
+export function clearSessionOverrides(): void {
+  sessionOverrides.clear();
+  void persistSessionOverrides();
+}
+
 /** 筛选实际生效的规则：rule.enabled 且所属分组未停用（无 groupId 视为始终启用） */
 async function listEffectiveRules(): Promise<HeaderRule[]> {
   const [allRules, groups] = await Promise.all([
@@ -38,9 +90,12 @@ async function listEffectiveRules(): Promise<HeaderRule[]> {
     groups.filter((g) => !g.enabled).map((g) => g.id),
   );
   return allRules
-    .filter(
-      (r) => r.enabled && (r.groupId == null || !disabledGroups.has(r.groupId)),
-    )
+    .filter((r) => {
+      const effective = sessionOverrides.has(r.id)
+        ? sessionOverrides.get(r.id)
+        : r.enabled;
+      return effective && (r.groupId == null || !disabledGroups.has(r.groupId));
+    })
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
@@ -71,6 +126,8 @@ export interface HeaderEngine {
 }
 
 export async function createHeaderEngine(): Promise<HeaderEngine | null> {
+  // 恢复 MV3 下跨 Service Worker 重启的会话覆盖（Firefox MV2 无 storage.session 时为空操作）
+  await loadSessionOverrides();
   const kind = detectHeaderEngine();
   if (kind == null) return null;
 

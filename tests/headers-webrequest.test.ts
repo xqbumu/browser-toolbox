@@ -76,10 +76,11 @@ describe("applyHeaderActions", () => {
 });
 
 describe("pickActions", () => {
-  it("仅收集命中 URL 且方向匹配的动作；禁用规则跳过", () => {
+  it("仅收集命中 URL 且方向匹配的动作（enabled 过滤由调用方负责）", () => {
     const rules = [
       rule({
-        enabled: false,
+        // 不命中下方 URL，故被 URL 匹配阶段排除（pickActions 不再二次判断 enabled）
+        condition: { matches: [P("https://other.com/*")] },
         actions: [{ target: "request", op: "set", name: "Nope", value: "" }],
       }),
       rule({
@@ -237,11 +238,7 @@ describe("pickActions URL 正则排除", () => {
       actions: [{ target: "request", op: "set", name: "X", value: "1" }],
     });
     expect(
-      pickActions(
-        [r],
-        "https://api.example.com/internal/secret",
-        "request",
-      ),
+      pickActions([r], "https://api.example.com/internal/secret", "request"),
     ).toHaveLength(0);
     expect(
       pickActions([r], "https://api.example.com/public", "request"),

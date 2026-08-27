@@ -33,7 +33,12 @@ import type {
 import type { CaptureResult, BatchResult, Rect } from "@/types/capture";
 import type { CaptureConfig } from "@/types/config";
 import type { ScreenshotRecord } from "@/types/history";
-import { createHeaderEngine, type HeaderEngine } from "@/core/headers/engine";
+import {
+  createHeaderEngine,
+  setSessionOverride,
+  getSessionOverrides,
+  type HeaderEngine,
+} from "@/core/headers/engine";
 import {
   deleteHeaderRule,
   deleteGroup,
@@ -332,6 +337,19 @@ async function handleRequest(
       await requestSync("规则导入");
       return { ok: true, data: all };
     }
+
+    case "HEADERS_SESSION_OVERRIDE": {
+      // 会话级覆盖不写持久化；设置后触发引擎重建以即时生效
+      setSessionOverride(msg.payload.id, msg.payload.enabled);
+      await requestSync("会话覆盖变更");
+      return {
+        ok: true,
+        data: { id: msg.payload.id, enabled: msg.payload.enabled },
+      };
+    }
+
+    case "HEADERS_SESSION_LIST":
+      return { ok: true, data: getSessionOverrides() };
 
     case "GROUPS_LIST":
       return { ok: true, data: await listGroups() };
