@@ -305,3 +305,14 @@ describe("toDnrRules URL 正则排除降级", () => {
     expect(out[0]!.condition.urlFilter).toBe("*://b.com/*");
   });
 });
+
+describe("toDnrRules 响应体规则降级", () => {
+  it("body 类型规则在 DNR 不下发", () => {
+    const out = toDnrRules([
+      rule({ kind: "body", bodyActions: [{ match: "a", replace: "b" }] }),
+      rule({ condition: { matches: [{ matchType: "pattern", value: "*://b.com/*" }] }, actions: [{ ...setA }] }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.condition.urlFilter).toBe("*://b.com/*");
+  });
+});

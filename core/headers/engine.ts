@@ -12,6 +12,7 @@ import {
   applyQueryTransform,
   pickActions,
 } from "./webrequest";
+import { applyBodyActions, isTextualContentType } from "./body";
 import {
   conditionMatchesUrl,
   isDomainExcluded,
@@ -109,6 +110,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
 
   // webrequest：内存缓存 + 阻塞监听
   let enabled: HeaderRule[] = [];
+  let bodyRules: HeaderRule[] = [];
 
   // webRequest 的 type 字符串与本仓库 HeaderResourceType 命名一致，未知类型保守返回 undefined
   const RESOURCE_TYPE_SET: ReadonlySet<string> = new Set([
@@ -149,6 +151,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     };
   };
   const onHeadersReceived = (details: {
+    requestId: string;
     url: string;
     method?: string;
     type?: string;
@@ -165,10 +168,68 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       details.method,
       resourceType,
     );
+    maybeRewriteBody(details, resourceType);
     if (actions.length === 0 || !details.responseHeaders) return undefined;
     return {
       responseHeaders: applyHeaderActions(details.responseHeaders, actions),
     };
+  };
+
+  // 响应体改写：仅 Firefox MV2 的 filterResponseData 可用。命中文本型响应时按规则重写。
+  const maybeRewriteBody = (
+    details: {
+      requestId: string;
+      url: string;
+      method?: string;
+      responseHeaders?: { name: string; value?: string }[];
+    },
+    resourceType: HeaderResourceType | undefined,
+  ): void => {
+    const matched = bodyRules.filter(
+      (r) =>
+        conditionMatchesUrl(r.condition, details.url) &&
+        !isDomainExcluded(r.condition, details.url) &&
+        !isMethodOrTypeExcluded(r.condition, details.method, resourceType) &&
+        !isUrlRegexExcluded(r.condition, details.url),
+    );
+    const actions = matched.flatMap((r) => r.bodyActions ?? []);
+    if (actions.length === 0) return;
+    const frApi = (
+      browser.webRequest as unknown as {
+        filterResponseData?: (id: string) => {
+          ondata: {
+            addListener: (cb: (e: { data: ArrayBuffer }) => void) => void;
+          };
+          onstop: { addListener: (cb: () => void) => void };
+          onerror: { addListener: (cb: () => void) => void };
+          write: (chunk: Uint8Array) => void;
+          close: () => void;
+        };
+      }
+    ).filterResponseData;
+    const fr = frApi?.(details.requestId);
+    if (!fr) return;
+    const contentType = (details.responseHeaders ?? []).find(
+      (h) => h.name.toLowerCase() === "content-type",
+    )?.value;
+    if (!isTextualContentType(contentType)) {
+      fr.close();
+      return;
+    }
+    const decoder = new TextDecoder("utf-8");
+    const encoder = new TextEncoder();
+    let buf = "";
+    fr.ondata.addListener((ev) => {
+      buf += decoder.decode(ev.data, { stream: true });
+    });
+    fr.onstop.addListener(() => {
+      buf += decoder.decode();
+      fr.write(encoder.encode(applyBodyActions(buf, actions)));
+      fr.close();
+    });
+    fr.onerror.addListener(() => {
+      fr.close();
+    });
   };
 
   // cancel / redirect / query 规则在 onBeforeRequest 阶段处理
@@ -292,6 +353,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       const all = await listEffectiveRules();
       const headersOnly: HeaderRule[] = [];
       enabled = [];
+      bodyRules = [];
       for (const r of all) {
         if ((r.kind ?? "headers") === "headers") {
           enabled.push(r);
@@ -302,10 +364,12 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
           redirectRules.push(r);
         } else if (r.kind === "query") {
           queryRules.push(r);
+        } else if (r.kind === "body") {
+          bodyRules.push(r);
         }
       }
       log.info(
-        `webRequest 缓存：头部 ${enabled.length} · 取消 ${cancelRules.length} · 重定向 ${redirectRules.length}`,
+        `webRequest 缓存：头部 ${enabled.length} · 取消 ${cancelRules.length} · 重定向 ${redirectRules.length} · 查询 ${queryRules.length} · 响应体 ${bodyRules.length}`,
       );
     },
     dispose(): void {

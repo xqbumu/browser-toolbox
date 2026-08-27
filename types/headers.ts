@@ -74,8 +74,20 @@ export interface HeaderRuleCondition {
   excludeRegex?: string[];
 }
 
-/** 规则动作类型：改写头部 / 阻止请求 / 重定向 / 改写查询参数 */
-export type RuleKind = "headers" | "cancel" | "redirect" | "query";
+/** 规则动作类型：改写头部 / 阻止请求 / 重定向 / 改写查询参数 / 改写响应体 */
+export type RuleKind = "headers" | "cancel" | "redirect" | "query" | "body";
+
+/** 响应体替换动作：在文本型响应体中按匹配重写（仅 Firefox MV2 生效） */
+export interface BodyAction {
+  /** 查找串；isRegex=true 时为正则源 */
+  match: string;
+  /** 替换值（可为空串表示删除匹配内容） */
+  replace?: string;
+  /** 是否按正则匹配 */
+  isRegex?: boolean;
+  /** 是否区分大小写（isRegex=false 时生效；默认不区分） */
+  caseSensitive?: boolean;
+}
 
 /** 查询参数动作：add/replace 设置（同名则覆盖），remove 移除 */
 export type QueryParamOp = "add" | "replace" | "remove";
@@ -99,6 +111,8 @@ export interface HeaderRule {
   redirectTo?: string;
   /** kind=query：查询参数改写动作；命中请求重写其 URL 查询串 */
   queryActions?: QueryParamAction[];
+  /** kind=body：响应体替换动作；命中后重写文本型响应体（仅 Firefox MV2） */
+  bodyActions?: BodyAction[];
   /** 备注（可选，列表 tooltip 与编辑器展示） */
   comment?: string;
   /** 所属分组 id；缺省 = 隐式「未分组」，等价 groupId=undefined */
@@ -202,7 +216,10 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
 
   const actions = Array.isArray(rule.actions) ? rule.actions : [];
   const kind: RuleKind =
-    rule.kind === "cancel" || rule.kind === "redirect" || rule.kind === "query"
+    rule.kind === "cancel" ||
+    rule.kind === "redirect" ||
+    rule.kind === "query" ||
+    rule.kind === "body"
       ? rule.kind
       : "headers";
 
@@ -237,6 +254,28 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
       }
       if (q.op !== "remove" && !(q.value ?? "").trim()) {
         errors.push(`${label}：设置/覆盖操作需要填写参数值`);
+      }
+    });
+  } else if (kind === "body") {
+    const bas = Array.isArray(rule.bodyActions) ? rule.bodyActions : [];
+    if (bas.length === 0) {
+      errors.push("至少需要一条响应体替换动作");
+    }
+    bas.forEach((b, i) => {
+      const label = `响应体动作 #${i + 1}`;
+      if (!b || typeof b !== "object") {
+        errors.push(`${label}：不是有效对象`);
+        return;
+      }
+      if (!(b.match ?? "").trim()) {
+        errors.push(`${label}：查找内容不能为空`);
+      }
+      if (b.isRegex) {
+        try {
+          new RegExp(b.match ?? "");
+        } catch {
+          errors.push(`${label}：正则表达式不合法`);
+        }
       }
     });
   }
@@ -341,7 +380,10 @@ export function migrateHeaderRule(raw: HeaderRule): HeaderRule {
     name: typeof raw.name === "string" ? raw.name : "",
     enabled: Boolean(raw.enabled),
     kind:
-      raw.kind === "cancel" || raw.kind === "redirect" || raw.kind === "query"
+      raw.kind === "cancel" ||
+      raw.kind === "redirect" ||
+      raw.kind === "query" ||
+      raw.kind === "body"
         ? raw.kind
         : "headers",
     createdAt: raw.createdAt ?? 0,
@@ -387,6 +429,8 @@ export function ruleKindLabel(kind: RuleKind | undefined): string {
       return "重定向";
     case "query":
       return "改写查询";
+    case "body":
+      return "改写响应体";
     default:
       return "改写头部";
   }
@@ -407,6 +451,11 @@ export function describeActions(rule: HeaderRule): string {
       )
       .join(" ");
     return `查询 ${summary}`;
+  }
+  if (rule.kind === "body") {
+    const bas = rule.bodyActions ?? [];
+    if (bas.length === 0) return "改写响应体（无动作）";
+    return `响应体 ${bas.length} 条替换（仅 Firefox）`;
   }
   const req = rule.actions.filter((a) => a.target === "request").length;
   const resp = rule.actions.filter((a) => a.target === "response").length;

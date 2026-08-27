@@ -209,9 +209,12 @@ export function HeaderRulesSection() {
                 <span className="rule-name">
                   {rule.name || "未命名规则"}
                   {dnrLimited &&
-                    (rule.condition.excludeRegex ?? []).some((p) =>
+                    ((rule.condition.excludeRegex ?? []).some((p) =>
                       p.trim(),
-                    ) && <span className="badge warn">仅Firefox</span>}
+                    ) ||
+                      rule.kind === "body") && (
+                      <span className="badge warn">仅Firefox</span>
+                    )}
                 </span>
                 <span
                   className="rule-sub"

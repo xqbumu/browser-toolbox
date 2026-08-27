@@ -28,6 +28,7 @@ import {
   type HeaderTarget,
   type QueryParamAction,
   type QueryParamOp,
+  type BodyAction,
   type RuleKind,
 } from "@/types/headers";
 
@@ -96,6 +97,14 @@ export function HeaderRuleEditor(props: {
     });
   }
 
+  function patchBodyAction(idx: number, p: Partial<BodyAction>): void {
+    const list = draft.bodyActions ?? [];
+    onChange({
+      ...draft,
+      bodyActions: list.map((b, i) => (i === idx ? { ...b, ...p } : b)),
+    });
+  }
+
   async function save(): Promise<void> {
     const errs = validateHeaderRule(draft);
     if (errs.length > 0) {
@@ -152,6 +161,7 @@ export function HeaderRuleEditor(props: {
           <Radio value="cancel">阻止请求</Radio>
           <Radio value="redirect">重定向</Radio>
           <Radio value="query">改写查询</Radio>
+          <Radio value="body">改写响应体</Radio>
         </RadioGroup>
       </div>
 
@@ -161,7 +171,9 @@ export function HeaderRuleEditor(props: {
           message={
             ruleKind === "cancel"
               ? "命中即取消该请求，不产生网络响应"
-              : "命中后将请求重定向到下方目标地址"
+              : ruleKind === "body"
+                ? "命中后按规则重写文本型响应体（HTML/JSON/JS/CSS 等）。仅 Firefox 全量生效，Chrome/Safari 暂不支持"
+                : "命中后将请求重定向到下方目标地址"
           }
         />
       )}
@@ -544,6 +556,87 @@ export function HeaderRuleEditor(props: {
             }
           >
             添加查询动作
+          </Button>
+        </div>
+      )}
+
+      {ruleKind === "body" && (
+        <div className="field">
+          <span className="field-label">响应体替换动作</span>
+          <Alert
+            theme="warning"
+            message="每条动作按「查找 → 替换」改写响应体文本。正则模式用 JS 正则语法；仅对 HTML/JSON/JS/CSS 等文本响应生效（Chrome/Safari 不支持，规则不生效）。"
+          />
+          {(draft.bodyActions ?? []).map((b, i) => (
+            <div key={i} className="action-row body-action">
+              <div className="action-line">
+                <Button
+                  size="small"
+                  variant="text"
+                  theme="danger"
+                  title="移除该动作"
+                  onClick={() =>
+                    patch({
+                      bodyActions: (draft.bodyActions ?? []).filter(
+                        (_, idx) => idx !== i,
+                      ),
+                    })
+                  }
+                >
+                  <CloseIcon />
+                </Button>
+                <label className="mini-check">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(b.isRegex)}
+                    onChange={(e) =>
+                      patchBodyAction(i, { isRegex: e.target.checked })
+                    }
+                  />
+                  正则
+                </label>
+                <label className="mini-check">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(b.caseSensitive)}
+                    onChange={(e) =>
+                      patchBodyAction(i, { caseSensitive: e.target.checked })
+                    }
+                  />
+                  区分大小写
+                </label>
+              </div>
+              <Input
+                size="small"
+                placeholder="查找内容（正则模式填正则源）"
+                value={b.match}
+                onChange={(v) => patchBodyAction(i, { match: String(v ?? "") })}
+              />
+              <Input
+                size="small"
+                placeholder="替换为（留空=删除匹配内容）"
+                value={b.replace ?? ""}
+                onChange={(v) =>
+                  patchBodyAction(i, { replace: String(v ?? "") })
+                }
+              />
+            </div>
+          ))}
+          <Button
+            size="small"
+            block
+            variant="dashed"
+            icon={<PlusIcon />}
+            onClick={() =>
+              patch({
+                bodyActions: [
+                  ...(draft.bodyActions ?? []),
+                  { match: "", replace: "" } as BodyAction,
+                ],
+              })
+            }
+          >
+            添加响应体动作
           </Button>
         </div>
       )}

@@ -228,7 +228,7 @@ export function HeadersTool(): React.ReactNode {
           {others.map((rule) => (
             <RuleRow
               key={rule.id}
-                dnrLimited={dnrLimited}
+              dnrLimited={dnrLimited}
               groups={groups}
               rule={rule}
               onToggle={(enabled) => void toggle(rule.id, enabled)}
@@ -270,7 +270,8 @@ function RuleRow(props: {
     : undefined;
   const regexLimited =
     props.dnrLimited &&
-    (rule.condition.excludeRegex ?? []).some((p) => p.trim());
+    ((rule.condition.excludeRegex ?? []).some((p) => p.trim()) ||
+      rule.kind === "body");
   return (
     <div className={`rule-row${rule.enabled ? "" : " disabled"}`}>
       <label className="switch">

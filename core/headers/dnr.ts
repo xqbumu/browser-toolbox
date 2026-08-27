@@ -183,9 +183,18 @@ export function toDnrRules(
     const kind =
       rule.kind === "cancel" ||
       rule.kind === "redirect" ||
-      rule.kind === "query"
+      rule.kind === "query" ||
+      rule.kind === "body"
         ? rule.kind
         : "headers";
+
+    // 响应体改写依赖 filterResponseData，仅 Firefox MV2 可用，DNR 直接跳过
+    if (kind === "body") {
+      log.warn(
+        `规则「${rule.name || rule.id}」为响应体改写，DNR 不支持，已在 Chrome/Safari 跳过`,
+      );
+      continue;
+    }
 
     // 排序权重 → DNR 优先级（同头冲突时后写者生效，与 MV2 行为一致）
     const priority = 1 + (rule.order ?? 0);
