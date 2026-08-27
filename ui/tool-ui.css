@@ -1011,3 +1011,58 @@ ul.error-list li::marker {
 .headers-panel > .section-label {
   margin: 8px 0 4px;
 }
+
+/* ---- 选项页 MCP 服务卡片 ---- */
+.mcp-card {
+  margin-top: 16px;
+  border: 1px solid var(--tb-border, #eef0f3);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--tb-surface, #fff);
+}
+.mcp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.mcp-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.mcp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mcp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mcp-key {
+  width: 48px;
+  color: var(--text-dim);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.mcp-row code {
+  background: var(--tb-surface-2, #f2f3f5);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  word-break: break-all;
+}
+.mcp-token {
+  max-width: 320px;
+}
+.link-btn {
+  border: none;
+  background: none;
+  color: var(--td-brand-color, #0052d9);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}

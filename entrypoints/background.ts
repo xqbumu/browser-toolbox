@@ -29,6 +29,7 @@ import type {
   ProgressEvent,
   CaptureJobContext,
   ToastKind,
+  McpStatus,
 } from "@/types/messages";
 import type { CaptureResult, BatchResult, Rect } from "@/types/capture";
 import type { CaptureConfig } from "@/types/config";
@@ -39,6 +40,7 @@ import {
   getSessionOverrides,
   type HeaderEngine,
 } from "@/core/headers/engine";
+import { initMcp, startMcp, stopMcp, getMcpStatus } from "@/core/mcp/manager";
 import {
   deleteHeaderRule,
   deleteGroup,
@@ -117,6 +119,20 @@ export default defineBackground(() => {
       return true; // 异步响应
     },
   );
+
+  // MCP 本地服务：默认关闭（opt-in）。若用户在选项中启用过，则随后台自动恢复监听。
+  // Chrome/Edge 走 chrome.sockets（Firefox 桥接见 firefox-bridge.ts）。
+  void initMcp((msg) => handleRequest(msg, captureService))
+    .then((status) => {
+      if (status.running)
+        log.info("MCP 本地服务已启动", (status as McpStatus).url);
+      else if ((status as McpStatus).unsupportedReason)
+        log.info(
+          "MCP 本地服务不可用：",
+          (status as McpStatus).unsupportedReason,
+        );
+    })
+    .catch((e) => log.warn("MCP 本地服务启动失败", e));
 
   log.info("后台已启动");
 });
@@ -373,6 +389,19 @@ async function handleRequest(
         data: { id: msg.payload.id, enabled: msg.payload.enabled },
       };
     }
+
+    case "MCP_STATUS":
+      return { ok: true, data: await getMcpStatus() };
+
+    case "MCP_START":
+      return {
+        ok: true,
+        data: await startMcp((m) => handleRequest(m, service)),
+      };
+
+    case "MCP_STOP":
+      await stopMcp();
+      return { ok: true, data: await getMcpStatus() };
 
     default: {
       const unknown = msg as { type?: string };

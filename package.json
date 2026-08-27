@@ -16,6 +16,7 @@
     "zip:chrome": "wxt zip -b chrome",
     "zip:firefox": "wxt zip -b firefox --mv2",
     "compile": "tsc --noEmit",
+    "mcp": "node mcp-bridge/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "wxt prepare"

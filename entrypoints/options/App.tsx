@@ -4,12 +4,14 @@
  * 后续新工具同样遵循「设置跟随工具」约定，此页不再集中承载各工具表单。
  */
 import { HeaderRulesSection } from "./components/HeaderRulesSection";
+import { McpPanel } from "./components/McpPanel";
 
 export default function App() {
   return (
     <div className="options-page">
       <h1>🧩 请求头规则管理</h1>
       <HeaderRulesSection />
+      <McpPanel />
     </div>
   );
 }

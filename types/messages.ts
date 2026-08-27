@@ -116,7 +116,24 @@ export type PopupRequest =
   | { type: "GROUPS_LIST"; payload: Record<string, never> }
   | { type: "GROUPS_SAVE"; payload: { group: HeaderGroup } }
   | { type: "GROUPS_DELETE"; payload: { id: string } }
-  | { type: "GROUPS_TOGGLE"; payload: { id: string; enabled: boolean } };
+  | { type: "GROUPS_TOGGLE"; payload: { id: string; enabled: boolean } }
+  // ---- MCP 本地服务（仅 Chrome/Edge 经 chrome.sockets 起本地端点） ----
+  | { type: "MCP_STATUS"; payload: Record<string, never> }
+  | { type: "MCP_START"; payload: Record<string, never> }
+  | { type: "MCP_STOP"; payload: Record<string, never> };
+
+/** MCP 本地服务状态（MCP_STATUS 返回） */
+export interface McpStatus {
+  running: boolean;
+  /** 本地监听端口（Chrome/Edge） */
+  port?: number;
+  /** 当前鉴权 token（仅运行时内存镜像，持久于 storage.local） */
+  token?: string;
+  /** 客户端可直接使用的端点 URL */
+  url?: string;
+  /** 不支持时的原因（如 Firefox 无 chrome.sockets） */
+  unsupportedReason?: string;
+}
 
 // ---- background → popup（进度/结果推送） ----
 
