@@ -64,6 +64,10 @@ export interface HeaderRuleCondition {
   methods?: string[];
   /** 排除域名列表（每行一域，支持 *.example.com 通配写法）；命中即跳过本规则 */
   excludeDomains?: string[];
+  /** 排除 HTTP 方法（大写）；命中即跳过本规则 */
+  excludeMethods?: string[];
+  /** 排除资源类型；命中即跳过本规则 */
+  excludeResourceTypes?: HeaderResourceType[];
 }
 
 /** 规则动作类型：改写头部 / 阻止请求 / 重定向 */
@@ -322,7 +326,14 @@ export function describeCondition(condition: HeaderRuleCondition): string {
   const first = label(ms[0]!);
   let base = ms.length > 1 ? `${first} 等 ${ms.length} 组` : first;
   const ex = condition.excludeDomains?.filter((d) => d.trim()).length ?? 0;
-  if (ex > 0) base += ` · 排除${ex}域`;
+  const exm = condition.excludeMethods?.filter((d) => d.trim()).length ?? 0;
+  const exr =
+    condition.excludeResourceTypes?.filter((d) => d.trim()).length ?? 0;
+  const parts: string[] = [];
+  if (ex > 0) parts.push(`排除${ex}域`);
+  if (exm > 0) parts.push(`排除${exm}方法`);
+  if (exr > 0) parts.push(`排除${exr}类型`);
+  if (parts.length > 0) base += ` · ${parts.join("/")}`;
   return base;
 }
 

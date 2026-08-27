@@ -8,7 +8,11 @@ import type {
   HeaderResourceType,
   HeaderRule,
 } from "@/types/headers";
-import { conditionMatchesUrl, isDomainExcluded } from "./match";
+import {
+  conditionMatchesUrl,
+  isDomainExcluded,
+  isMethodOrTypeExcluded,
+} from "./match";
 
 export interface HttpHeader {
   name: string;
@@ -33,6 +37,7 @@ export function pickActions(
     if (!rule.enabled) continue;
     if (!conditionMatchesUrl(rule.condition, url)) continue;
     if (isDomainExcluded(rule.condition, url)) continue;
+    if (isMethodOrTypeExcluded(rule.condition, method, resourceType)) continue;
 
     const methods = rule.condition.methods;
     if (methods?.length) {

@@ -247,3 +247,20 @@ describe("toDnrRules 重定向", () => {
     }
   });
 });
+
+describe("toDnrRules 排除方法/类型", () => {
+  it("excludeMethods/excludeResourceTypes 映射为 DNR excluded* 字段", () => {
+    const out = toDnrRules([
+      rule({
+        condition: {
+          matches: [{ matchType: "pattern", value: "*://*/*" }],
+          excludeMethods: ["POST", "PUT"],
+          excludeResourceTypes: ["script" as never],
+        },
+        actions: [{ ...setA }],
+      }),
+    ]);
+    expect(out[0]!.condition.excludedRequestMethods).toEqual(["post", "put"]);
+    expect(out[0]!.condition.excludedResourceTypes).toEqual(["script"]);
+  });
+});

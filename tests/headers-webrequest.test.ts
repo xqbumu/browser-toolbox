@@ -183,3 +183,21 @@ describe("pickActions 排除域名", () => {
     expect(excluded.length).toBe(0);
   });
 });
+
+describe("pickActions 排除方法/类型", () => {
+  it("命中排除方法或资源类型时不返回动作", () => {
+    const r = rule({
+      condition: {
+        matches: [{ matchType: "pattern", value: "*://api.example.com/*" }],
+        excludeMethods: ["POST"],
+      },
+      actions: [{ target: "request", op: "set", name: "X", value: "1" }],
+    });
+    expect(
+      pickActions([r], "https://api.example.com/x", "request", "GET"),
+    ).toHaveLength(1);
+    expect(
+      pickActions([r], "https://api.example.com/x", "request", "POST"),
+    ).toHaveLength(0);
+  });
+});

@@ -108,6 +108,19 @@ export function isDomainExcluded(
   });
 }
 
+/** 方法/资源类型排除命中则跳过（与域名排除同语义） */
+export function isMethodOrTypeExcluded(
+  condition: HeaderRuleCondition,
+  method?: string,
+  resourceType?: HeaderResourceType,
+): boolean {
+  const ms = condition.excludeMethods;
+  if (ms?.length && method && ms.includes(method.toUpperCase())) return true;
+  const ts = condition.excludeResourceTypes;
+  if (ts?.length && resourceType && ts.includes(resourceType)) return true;
+  return false;
+}
+
 export function conditionMatches(
   condition: HeaderRuleCondition,
   url: string,

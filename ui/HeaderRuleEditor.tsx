@@ -253,6 +253,42 @@ export function HeaderRuleEditor(props: {
           }
         />
         <span className="hint">命中以下任意域名的请求将跳过本规则</span>
+        <div className="exclude-line">
+          <span className="exclude-label">排除方法</span>
+          <Select
+            multiple
+            clearable
+            size="small"
+            className="one-line-select"
+            placeholder="不选 = 不限"
+            value={draft.condition.excludeMethods ?? []}
+            options={METHODS.map((m) => ({ value: m, label: m }))}
+            onChange={(v) =>
+              patchCondition({
+                excludeMethods: (v as string[]).map((s) => String(s)),
+              })
+            }
+          />
+        </div>
+        <div className="exclude-line">
+          <span className="exclude-label">排除类型</span>
+          <Select
+            multiple
+            clearable
+            size="small"
+            className="one-line-select"
+            placeholder="不选 = 不限"
+            value={draft.condition.excludeResourceTypes ?? []}
+            options={RESOURCE_TYPES.map((t) => ({ value: t, label: t }))}
+            onChange={(v) =>
+              patchCondition({
+                excludeResourceTypes: (v as HeaderResourceType[]).map(
+                  (s) => s as HeaderResourceType,
+                ),
+              })
+            }
+          />
+        </div>
       </details>
 
       <div className="field">

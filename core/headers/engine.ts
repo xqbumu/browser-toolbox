@@ -8,7 +8,11 @@
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
 import { DNR_START_ID, toDnrRules } from "./dnr";
 import { applyHeaderActions, pickActions } from "./webrequest";
-import { conditionMatchesUrl, isDomainExcluded } from "./match";
+import {
+  conditionMatchesUrl,
+  isDomainExcluded,
+  isMethodOrTypeExcluded,
+} from "./match";
 import {
   isHeaderMasterEnabled,
   listHeaderRules,
@@ -167,11 +171,14 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
   let redirectRules: HeaderRule[] = [];
   function resolveBeforeRequest(
     url: string,
+    method?: string,
+    resourceType?: HeaderResourceType,
   ): { cancel?: boolean; redirectUrl?: string } | undefined {
     for (const rule of cancelRules) {
       if (
         conditionMatchesUrl(rule.condition, url) &&
-        !isDomainExcluded(rule.condition, url)
+        !isDomainExcluded(rule.condition, url) &&
+        !isMethodOrTypeExcluded(rule.condition, method, resourceType)
       )
         return { cancel: true };
     }
@@ -180,6 +187,8 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       if (!to) continue;
       if (!conditionMatchesUrl(rule.condition, url)) continue;
       if (isDomainExcluded(rule.condition, url)) continue;
+      if (isMethodOrTypeExcluded(rule.condition, method, resourceType))
+        continue;
       // 正则模式：从 matches 中取首个 regex 条件作为捕获源（与 DNR 一致）
       const regexItem = (rule.condition.matches ?? []).find(
         (m) => (m.matchType ?? "pattern") === "regex",
@@ -201,8 +210,11 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
 
   const onBeforeRequest = (details: {
     url: string;
+    method?: string;
+    type?: string;
   }): { cancel?: boolean; redirectUrl?: string } | undefined => {
-    return resolveBeforeRequest(details.url);
+    const rt = details.type as HeaderResourceType | undefined;
+    return resolveBeforeRequest(details.url, details.method, rt);
   };
 
   const wr = browser.webRequest as unknown as {
@@ -210,6 +222,8 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       addListener: (
         cb: (details: {
           url: string;
+          method?: string;
+          type?: string;
         }) => { cancel?: boolean; redirectUrl?: string } | undefined,
         filter: { urls: string[] },
         extra: string[],
@@ -217,6 +231,8 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       removeListener: (
         cb: (details: {
           url: string;
+          method?: string;
+          type?: string;
         }) => { cancel?: boolean; redirectUrl?: string } | undefined,
       ) => void;
     };

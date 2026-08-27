@@ -25,6 +25,8 @@ export interface DnrLikeRule {
     resourceTypes?: string[];
     requestMethods?: string[];
     excludedRequestDomains?: string[];
+    excludedRequestMethods?: string[];
+    excludedResourceTypes?: string[];
   };
   action:
     | {
@@ -119,6 +121,16 @@ function buildCondition(
             .map((d) => (d.startsWith("*.", 0) ? d.slice(2) : d.trim()))
             .filter(Boolean),
         }
+      : {}),
+    ...(rule.condition.excludeMethods?.length
+      ? {
+          excludedRequestMethods: rule.condition.excludeMethods.map((m) =>
+            m.toLowerCase(),
+          ),
+        }
+      : {}),
+    ...(rule.condition.excludeResourceTypes?.length
+      ? { excludedResourceTypes: [...rule.condition.excludeResourceTypes] }
       : {}),
   };
 }

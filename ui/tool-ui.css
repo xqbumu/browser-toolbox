@@ -926,3 +926,17 @@ ul.error-list li::marker {
   font-family: var(--td-font-family-mono, monospace);
   resize: vertical;
 }
+
+/* 排除条件：域名 + 方法 + 类型 */
+.exclude-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.exclude-label {
+  flex-shrink: 0;
+  width: 56px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
