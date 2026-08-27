@@ -264,3 +264,26 @@ describe("toDnrRules 排除方法/类型", () => {
     expect(out[0]!.condition.excludedResourceTypes).toEqual(["script"]);
   });
 });
+
+describe("toDnrRules 查询参数改写", () => {
+  it("query 规则产出 redirect.transform.queryTransform（add/replace + remove）", () => {
+    const out = toDnrRules([
+      rule({
+        kind: "query",
+        queryActions: [
+          { op: "add", name: "token", value: "abc" },
+          { op: "remove", name: "debug" },
+        ],
+        condition: { matches: [{ matchType: "pattern", value: "*://a.com/*" }] },
+        actions: [],
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.action.type).toBe("redirect");
+    if (out[0]!.action.type === "redirect") {
+      const t = out[0]!.action.redirect.transform?.queryTransform;
+      expect(t?.addOrReplaceParams).toEqual([{ key: "token", value: "abc" }]);
+      expect(t?.removeParams).toEqual(["debug"]);
+    }
+  });
+});

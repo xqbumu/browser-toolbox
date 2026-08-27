@@ -26,6 +26,8 @@ import {
   type HeaderResourceType,
   type HeaderRule,
   type HeaderTarget,
+  type QueryParamAction,
+  type QueryParamOp,
   type RuleKind,
 } from "@/types/headers";
 
@@ -86,6 +88,14 @@ export function HeaderRuleEditor(props: {
     });
   }
 
+  function patchQueryAction(idx: number, p: Partial<QueryParamAction>): void {
+    const list = draft.queryActions ?? [];
+    onChange({
+      ...draft,
+      queryActions: list.map((q, i) => (i === idx ? { ...q, ...p } : q)),
+    });
+  }
+
   async function save(): Promise<void> {
     const errs = validateHeaderRule(draft);
     if (errs.length > 0) {
@@ -141,6 +151,7 @@ export function HeaderRuleEditor(props: {
           <Radio value="headers">改写头部</Radio>
           <Radio value="cancel">阻止请求</Radio>
           <Radio value="redirect">重定向</Radio>
+          <Radio value="query">改写查询</Radio>
         </RadioGroup>
       </div>
 
@@ -432,6 +443,85 @@ export function HeaderRuleEditor(props: {
               ? "正则模式下可用 $1~$9 引用匹配捕获组"
               : "需为 http(s) 绝对地址"}
           </span>
+        </div>
+      )}
+
+      {ruleKind === "query" && (
+        <div className="field">
+          <span className="field-label">查询参数动作</span>
+          {(draft.queryActions ?? []).map((q, i) => (
+            <div key={i} className="action-row">
+              <div className="action-line">
+                <Select
+                  size="small"
+                  className="sel-qop"
+                  value={q.op}
+                  options={[
+                    { value: "add", label: "添加/覆盖" },
+                    { value: "replace", label: "覆盖" },
+                    { value: "remove", label: "移除" },
+                  ]}
+                  onChange={(v) =>
+                    patchQueryAction(i, {
+                      op:
+                        v === "remove"
+                          ? "remove"
+                          : v === "replace"
+                            ? "replace"
+                            : "add",
+                    })
+                  }
+                />
+                <Button
+                  size="small"
+                  variant="text"
+                  theme="danger"
+                  title="移除该动作"
+                  onClick={() =>
+                    patch({
+                      queryActions: (draft.queryActions ?? []).filter(
+                        (_, idx) => idx !== i,
+                      ),
+                    })
+                  }
+                >
+                  <CloseIcon />
+                </Button>
+              </div>
+              <Input
+                size="small"
+                placeholder="参数名"
+                value={q.name}
+                onChange={(v) => patchQueryAction(i, { name: String(v ?? "") })}
+              />
+              {q.op !== "remove" && (
+                <Input
+                  size="small"
+                  placeholder="参数值"
+                  value={q.value ?? ""}
+                  onChange={(v) =>
+                    patchQueryAction(i, { value: String(v ?? "") })
+                  }
+                />
+              )}
+            </div>
+          ))}
+          <Button
+            size="small"
+            block
+            variant="dashed"
+            icon={<PlusIcon />}
+            onClick={() =>
+              patch({
+                queryActions: [
+                  ...(draft.queryActions ?? []),
+                  { op: "add", name: "", value: "" } as QueryParamAction,
+                ],
+              })
+            }
+          >
+            添加查询动作
+          </Button>
         </div>
       )}
 

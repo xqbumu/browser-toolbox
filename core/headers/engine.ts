@@ -7,7 +7,11 @@
  */
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
 import { DNR_START_ID, toDnrRules } from "./dnr";
-import { applyHeaderActions, pickActions } from "./webrequest";
+import {
+  applyHeaderActions,
+  applyQueryTransform,
+  pickActions,
+} from "./webrequest";
 import {
   conditionMatchesUrl,
   isDomainExcluded,
@@ -166,9 +170,10 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
     };
   };
 
-  // cancel / redirect 规则在 onBeforeRequest 阶段处理
+  // cancel / redirect / query 规则在 onBeforeRequest 阶段处理
   let cancelRules: HeaderRule[] = [];
   let redirectRules: HeaderRule[] = [];
+  let queryRules: HeaderRule[] = [];
   function resolveBeforeRequest(
     url: string,
     method?: string,
@@ -204,6 +209,16 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
         // pattern/contains：固定目标（要求绝对地址，校验层已保证）
         return { redirectUrl: to };
       }
+    }
+    for (const rule of queryRules) {
+      if (!conditionMatchesUrl(rule.condition, url)) continue;
+      if (isDomainExcluded(rule.condition, url)) continue;
+      if (isMethodOrTypeExcluded(rule.condition, method, resourceType))
+        continue;
+      const actions = rule.queryActions ?? [];
+      if (actions.length === 0) continue;
+      const newUrl = applyQueryTransform(url, actions);
+      if (newUrl !== url) return { redirectUrl: newUrl };
     }
     return undefined;
   }
@@ -281,6 +296,8 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
           cancelRules.push(r);
         } else if (r.kind === "redirect") {
           redirectRules.push(r);
+        } else if (r.kind === "query") {
+          queryRules.push(r);
         }
       }
       log.info(

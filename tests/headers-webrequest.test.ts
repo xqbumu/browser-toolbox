@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyHeaderActions, pickActions } from "@/core/headers/webrequest";
+import {
+  applyHeaderActions,
+  applyQueryTransform,
+  pickActions,
+} from "@/core/headers/webrequest";
 import {
   newHeaderRule,
   type HeaderRule,
@@ -199,5 +203,26 @@ describe("pickActions 排除方法/类型", () => {
     expect(
       pickActions([r], "https://api.example.com/x", "request", "POST"),
     ).toHaveLength(0);
+  });
+});
+
+describe("applyQueryTransform", () => {
+  it("添加覆盖参数并移除参数，原样未变时返回原 URL", () => {
+    const base = "https://a.com/x?foo=1";
+    const a = applyQueryTransform(base, [
+      { op: "add", name: "bar", value: "2" },
+      { op: "remove", name: "foo" },
+    ]);
+    expect(a).toBe("https://a.com/x?bar=2");
+    const same = applyQueryTransform("https://a.com/x?foo=1", [
+      { op: "add", name: "foo", value: "1" },
+    ]);
+    expect(same).toBe("https://a.com/x?foo=1");
+  });
+
+  it("非法 URL 原样返回", () => {
+    expect(
+      applyQueryTransform("not-a-url", [{ op: "add", name: "x", value: "1" }]),
+    ).toBe("not-a-url");
   });
 });

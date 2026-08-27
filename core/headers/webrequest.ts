@@ -84,3 +84,39 @@ export function applyHeaderActions(
   }
   return result;
 }
+
+/**
+ * 按查询参数动作重写 URL 的查询串（MV2 路径）：
+ * - add/replace → 设置或覆盖该参数（不存在则追加）；
+ * - remove → 删除该参数。
+ * 返回改写后的完整 URL；无任何改动时返回原 URL。
+ */
+export function applyQueryTransform(
+  url: string,
+  actions: { op: "add" | "replace" | "remove"; name: string; value?: string }[],
+): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  let changed = false;
+  for (const a of actions) {
+    const key = a.name.trim();
+    if (!key) continue;
+    if (a.op === "remove") {
+      if (parsed.searchParams.has(key)) {
+        parsed.searchParams.delete(key);
+        changed = true;
+      }
+    } else {
+      const val = (a.value ?? "").trim();
+      if (parsed.searchParams.get(key) !== val) {
+        parsed.searchParams.set(key, val);
+        changed = true;
+      }
+    }
+  }
+  return changed ? parsed.toString() : url;
+}

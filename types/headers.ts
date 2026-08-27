@@ -70,8 +70,19 @@ export interface HeaderRuleCondition {
   excludeResourceTypes?: HeaderResourceType[];
 }
 
-/** 规则动作类型：改写头部 / 阻止请求 / 重定向 */
-export type RuleKind = "headers" | "cancel" | "redirect";
+/** 规则动作类型：改写头部 / 阻止请求 / 重定向 / 改写查询参数 */
+export type RuleKind = "headers" | "cancel" | "redirect" | "query";
+
+/** 查询参数动作：add/replace 设置（同名则覆盖），remove 移除 */
+export type QueryParamOp = "add" | "replace" | "remove";
+
+export interface QueryParamAction {
+  op: QueryParamOp;
+  /** 参数名（字母数字与 -_. 等；与头部名校验同尺度） */
+  name: string;
+  /** op=remove 时可省略；否则为目标值 */
+  value?: string;
+}
 
 /** 请求头规则（扁平、可独立启停） */
 export interface HeaderRule {
@@ -82,6 +93,8 @@ export interface HeaderRule {
   kind?: RuleKind;
   /** kind=redirect：目标地址。正则匹配模式支持 $1~$9 引用捕获组 */
   redirectTo?: string;
+  /** kind=query：查询参数改写动作；命中请求重写其 URL 查询串 */
+  queryActions?: QueryParamAction[];
   /** 备注（可选，列表 tooltip 与编辑器展示） */
   comment?: string;
   /** 所属分组 id；缺省 = 隐式「未分组」，等价 groupId=undefined */
@@ -185,7 +198,9 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
 
   const actions = Array.isArray(rule.actions) ? rule.actions : [];
   const kind: RuleKind =
-    rule.kind === "cancel" || rule.kind === "redirect" ? rule.kind : "headers";
+    rule.kind === "cancel" || rule.kind === "redirect" || rule.kind === "query"
+      ? rule.kind
+      : "headers";
 
   if (kind === "headers") {
     if (actions.length === 0) {
@@ -202,6 +217,24 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
     } else if (!hasRegexMatch && !/^https?:\/\//i.test(to)) {
       errors.push("非正则匹配时，重定向目标必须是 http(s) 绝对地址");
     }
+  } else if (kind === "query") {
+    const qas = Array.isArray(rule.queryActions) ? rule.queryActions : [];
+    if (qas.length === 0) {
+      errors.push("至少需要一条查询参数动作");
+    }
+    qas.forEach((q, i) => {
+      const label = `查询动作 #${i + 1}`;
+      if (!q || typeof q !== "object") {
+        errors.push(`${label}：不是有效对象`);
+        return;
+      }
+      if (!HEADER_NAME_RE.test((q.name ?? "").trim())) {
+        errors.push(`${label}：参数名不合法（${q.name || "空"}）`);
+      }
+      if (q.op !== "remove" && !(q.value ?? "").trim()) {
+        errors.push(`${label}：设置/覆盖操作需要填写参数值`);
+      }
+    });
   }
   // cancel：命中即阻止，无额外字段
 
@@ -304,7 +337,9 @@ export function migrateHeaderRule(raw: HeaderRule): HeaderRule {
     name: typeof raw.name === "string" ? raw.name : "",
     enabled: Boolean(raw.enabled),
     kind:
-      raw.kind === "cancel" || raw.kind === "redirect" ? raw.kind : "headers",
+      raw.kind === "cancel" || raw.kind === "redirect" || raw.kind === "query"
+        ? raw.kind
+        : "headers",
     createdAt: raw.createdAt ?? 0,
     updatedAt: raw.updatedAt ?? 0,
     comment: typeof raw.comment === "string" ? raw.comment : undefined,
@@ -344,6 +379,8 @@ export function ruleKindLabel(kind: RuleKind | undefined): string {
       return "阻止请求";
     case "redirect":
       return "重定向";
+    case "query":
+      return "改写查询";
     default:
       return "改写头部";
   }
@@ -353,6 +390,18 @@ export function ruleKindLabel(kind: RuleKind | undefined): string {
 export function describeActions(rule: HeaderRule): string {
   if (rule.kind === "cancel") return "命中即取消请求";
   if (rule.kind === "redirect") return `→ ${rule.redirectTo ?? "?"}`;
+  if (rule.kind === "query") {
+    const qas = rule.queryActions ?? [];
+    if (qas.length === 0) return "改写查询（无动作）";
+    const summary = qas
+      .map((q) =>
+        q.op === "remove"
+          ? `-${q.name}`
+          : `${q.op === "add" ? "+" : "±"}${q.name}`,
+      )
+      .join(" ");
+    return `查询 ${summary}`;
+  }
   const req = rule.actions.filter((a) => a.target === "request").length;
   const resp = rule.actions.filter((a) => a.target === "response").length;
   const parts: string[] = [];

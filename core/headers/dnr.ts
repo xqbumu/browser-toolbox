@@ -37,7 +37,16 @@ export interface DnrLikeRule {
     | { type: "block" }
     | {
         type: "redirect";
-        redirect: { url?: string; regexSubstitution?: string };
+        redirect: {
+          url?: string;
+          regexSubstitution?: string;
+          transform?: {
+            queryTransform?: {
+              addOrReplaceParams?: { key: string; value: string }[];
+              removeParams?: string[];
+            };
+          };
+        };
       };
 }
 
@@ -161,7 +170,9 @@ export function toDnrRules(
 
     const urlConds = buildUrlConditions(rule.condition);
     const kind =
-      rule.kind === "cancel" || rule.kind === "redirect"
+      rule.kind === "cancel" ||
+      rule.kind === "redirect" ||
+      rule.kind === "query"
         ? rule.kind
         : "headers";
 
@@ -195,6 +206,33 @@ export function toDnrRules(
             priority,
             condition,
             action: { type: "block" },
+          });
+        } else if (kind === "query") {
+          // 查询参数改写：DNR 用 redirect.transform.queryTransform
+          const addOrReplaceParams = (rule.queryActions ?? [])
+            .filter((q) => q.op !== "remove" && (q.value ?? "").trim())
+            .map((q) => ({
+              key: q.name.trim(),
+              value: (q.value ?? "").trim(),
+            }));
+          const removeParams = (rule.queryActions ?? [])
+            .filter((q) => q.op === "remove")
+            .map((q) => q.name.trim());
+          const transform: {
+            queryTransform: {
+              addOrReplaceParams?: { key: string; value: string }[];
+              removeParams?: string[];
+            };
+          } = { queryTransform: {} };
+          if (addOrReplaceParams.length)
+            transform.queryTransform.addOrReplaceParams = addOrReplaceParams;
+          if (removeParams.length)
+            transform.queryTransform.removeParams = removeParams;
+          out.push({
+            id: nextId++,
+            priority,
+            condition,
+            action: { type: "redirect", redirect: { transform } },
           });
         } else {
           // regex 模式用 regexSubstitution 引用捕获组；其余为固定目标
