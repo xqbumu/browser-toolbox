@@ -25,9 +25,9 @@ export default defineConfig({
       "downloads",
       "storage",
       "<all_urls>",
-      // Firefox MV2：阻塞式 webRequest 改写请求头
+      // Firefox MV2：阻塞式 webRequest 改写请求头 + MCP 原生消息桥接
       ...(browser === "firefox"
-        ? (["webRequest", "webRequestBlocking"] as const)
+        ? (["webRequest", "webRequestBlocking", "nativeMessaging"] as const)
         : []),
       // Chrome/Safari MV3：declarativeNetRequest modifyHeaders
       ...(browser === "chrome" || browser === "safari"

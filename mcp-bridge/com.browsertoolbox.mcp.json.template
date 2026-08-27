@@ -1,0 +1,7 @@
+{
+  "name": "com.browsertoolbox.mcp",
+  "description": "Browser Toolbox MCP native host bridge (Firefox MV2)",
+  "path": "__PATH__",
+  "type": "stdio",
+  "allowed_extensions": ["__EXT_ID__"]
+}

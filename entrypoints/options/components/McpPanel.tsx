@@ -80,6 +80,8 @@ export function McpPanel(): React.ReactNode {
         <p className="muted">{status.unsupportedReason}</p>
       )}
 
+      {status?.hint && !status.url && <p className="muted">{status.hint}</p>}
+
       {status?.running && status.url && (
         <div className="mcp-body">
           <div className="mcp-row">
@@ -103,6 +105,26 @@ export function McpPanel(): React.ReactNode {
             在 MCP 客户端（如 Claude Desktop / IDE）以 Streamable HTTP
             方式连接， 请求头携带{" "}
             <code>Authorization: Bearer &lt;token&gt;</code>。
+          </p>
+        </div>
+      )}
+
+      {status?.running && !status.url && status.transport === "native" && (
+        <div className="mcp-body">
+          <div className="mcp-row">
+            <span className="mcp-key">Token</span>
+            <code className="mcp-token">{status.token}</code>
+            <button
+              className="link-btn"
+              onClick={() => void copy(status.token ?? "")}
+            >
+              复制
+            </button>
+          </div>
+          <p className="muted">
+            已与 native host 建立桥接。请在本机运行{" "}
+            <code>npm run mcp:native</code>，按其 stderr 输出的本地端点连接
+            （端点 URL 与 Token 由 native host 显示）。
           </p>
         </div>
       )}

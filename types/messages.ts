@@ -122,17 +122,24 @@ export type PopupRequest =
   | { type: "MCP_START"; payload: Record<string, never> }
   | { type: "MCP_STOP"; payload: Record<string, never> };
 
+/** MCP 本地服务传输方式 */
+export type McpTransport = "sockets" | "native";
+
 /** MCP 本地服务状态（MCP_STATUS 返回） */
 export interface McpStatus {
   running: boolean;
-  /** 本地监听端口（Chrome/Edge） */
+  /** 传输方式：Chrome 走 chrome.sockets，Firefox 走 nativeMessaging 桥接 */
+  transport?: McpTransport;
+  /** 本地监听端口（Chrome/Edge sockets 传输） */
   port?: number;
   /** 当前鉴权 token（仅运行时内存镜像，持久于 storage.local） */
   token?: string;
-  /** 客户端可直接使用的端点 URL */
+  /** 客户端可直接使用的端点 URL（sockets 传输有值；native 传输见 hint） */
   url?: string;
-  /** 不支持时的原因（如 Firefox 无 chrome.sockets） */
+  /** 不支持 / 需额外操作时的说明（如 Firefox 需安装并运行 native host） */
   unsupportedReason?: string;
+  /** 连接指引（native 传输下提示如何启动 native host） */
+  hint?: string;
 }
 
 // ---- background → popup（进度/结果推送） ----
