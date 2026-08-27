@@ -55,6 +55,9 @@ export function HeaderRuleEditor(props: {
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const ruleKind: RuleKind = draft.kind ?? "headers";
+  const hasRegexMatch = (draft.condition.matches ?? []).some(
+    (m) => (m.matchType ?? "pattern") === "regex",
+  );
 
   function patch(p: Partial<HeaderRule>): void {
     onChange({ ...draft, ...p });
@@ -382,14 +385,14 @@ export function HeaderRuleEditor(props: {
           <Input
             value={draft.redirectTo ?? ""}
             placeholder={
-              (draft.condition.matchType ?? "pattern") === "regex"
+              hasRegexMatch
                 ? "https://new.example.com$1（$1 引用捕获组）"
                 : "https://mirror.example.com/request-path"
             }
             onChange={(v) => patch({ redirectTo: String(v ?? "") })}
           />
           <span className="hint">
-            {(draft.condition.matchType ?? "pattern") === "regex"
+            {hasRegexMatch
               ? "正则模式下可用 $1~$9 引用匹配捕获组"
               : "需为 http(s) 绝对地址"}
           </span>

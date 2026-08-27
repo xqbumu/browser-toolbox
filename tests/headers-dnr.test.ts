@@ -207,3 +207,43 @@ describe("toDnrRules 排序权重", () => {
     expect(Math.max(...priorities)).toBe(1 + 5);
   });
 });
+
+describe("toDnrRules 重定向", () => {
+  it("正则匹配 → regexSubstitution 且 condition 为 regexFilter", () => {
+    const out = toDnrRules([
+      rule({
+        kind: "redirect",
+        redirectTo: "https://new.example.com/$1",
+        condition: {
+          matches: [{ matchType: "regex", value: "^https://a\\.com/(.*)" }],
+        },
+        actions: [],
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.condition.regexFilter).toBe("^https://a\\.com/(.*)");
+    expect(out[0]!.action.type).toBe("redirect");
+    if (out[0]!.action.type === "redirect") {
+      expect(out[0]!.action.redirect.regexSubstitution).toBe(
+        "https://new.example.com/$1",
+      );
+    }
+  });
+
+  it("模式匹配 → 固定 url 目标", () => {
+    const out = toDnrRules([
+      rule({
+        kind: "redirect",
+        redirectTo: "https://mirror.example.com/x",
+        condition: { matches: [{ matchType: "pattern", value: "*://a.com/*" }] },
+        actions: [],
+      }),
+    ]);
+    expect(out[0]!.action.type).toBe("redirect");
+    if (out[0]!.action.type === "redirect") {
+      expect(out[0]!.action.redirect.url).toBe(
+        "https://mirror.example.com/x",
+      );
+    }
+  });
+});

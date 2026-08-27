@@ -190,9 +190,12 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
   } else if (kind === "redirect") {
     const to =
       typeof rule.redirectTo === "string" ? rule.redirectTo.trim() : "";
+    const hasRegexMatch = (rule.condition?.matches ?? []).some(
+      (m) => (m.matchType ?? "pattern") === "regex",
+    );
     if (!to) {
       errors.push("重定向目标不能为空");
-    } else if (matchType !== "regex" && !/^https?:\/\//i.test(to)) {
+    } else if (!hasRegexMatch && !/^https?:\/\//i.test(to)) {
       errors.push("非正则匹配时，重定向目标必须是 http(s) 绝对地址");
     }
   }

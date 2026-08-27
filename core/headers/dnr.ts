@@ -148,7 +148,6 @@ export function toDnrRules(
     if (!rule.enabled) continue;
 
     const urlConds = buildUrlConditions(rule.condition);
-    const isRegex = (rule.condition.matchType ?? "pattern") === "regex";
     const kind =
       rule.kind === "cancel" || rule.kind === "redirect"
         ? rule.kind
@@ -193,7 +192,7 @@ export function toDnrRules(
             condition,
             action: {
               type: "redirect",
-              redirect: isRegex
+              redirect: urlCond.isRegex
                 ? { regexSubstitution: rule.redirectTo ?? "" }
                 : { url: rule.redirectTo ?? "" },
             },

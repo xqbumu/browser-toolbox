@@ -176,22 +176,22 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
         return { cancel: true };
     }
     for (const rule of redirectRules) {
-      const mt = rule.condition.matchType ?? "pattern";
       const to = (rule.redirectTo ?? "").trim();
       if (!to) continue;
-      if (mt === "regex") {
+      if (!conditionMatchesUrl(rule.condition, url)) continue;
+      if (isDomainExcluded(rule.condition, url)) continue;
+      // 正则模式：从 matches 中取首个 regex 条件作为捕获源（与 DNR 一致）
+      const regexItem = (rule.condition.matches ?? []).find(
+        (m) => (m.matchType ?? "pattern") === "regex",
+      );
+      if (regexItem?.value) {
         try {
-          const re = new RegExp(rule.condition.urlValue ?? "", "i");
-          if (re.test(url) && !isDomainExcluded(rule.condition, url)) {
-            return { redirectUrl: url.replace(re, to) };
-          }
+          const re = new RegExp(regexItem.value, "i");
+          if (re.test(url)) return { redirectUrl: url.replace(re, to) };
         } catch {
           // 非法正则不处理
         }
-      } else if (
-        conditionMatchesUrl(rule.condition, url) &&
-        !isDomainExcluded(rule.condition, url)
-      ) {
+      } else {
         // pattern/contains：固定目标（要求绝对地址，校验层已保证）
         return { redirectUrl: to };
       }
