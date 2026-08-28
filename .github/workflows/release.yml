@@ -33,9 +33,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
+
+      # pnpm v11 在 CI 中非交互环境会跳过依赖的 build 脚本（如 esbuild 下载平台二进制），
+      # 显式 rebuild 确保构建所需原生二进制就位
+      - run: pnpm rebuild esbuild @parcel/watcher
 
       - name: Typecheck
         run: npx tsc --noEmit
