@@ -16,6 +16,7 @@
     "zip:chrome": "wxt zip -b chrome",
     "zip:firefox": "wxt zip -b firefox --mv2",
     "compile": "tsc --noEmit",
+    "icon": "node scripts/gen-icon.mjs",
     "mcp": "node mcp-bridge/server.mjs",
     "mcp:native": "node mcp-bridge/native-host.mjs",
     "mcp:install": "bash mcp-bridge/install-host.sh",

@@ -19,6 +19,35 @@ export default defineConfig({
     description:
       "截图与请求头改写工具箱：整页滚动长图、选区/批量截图、Header 规则改写",
     version: "2.0.0",
+    // 图标（PNG，Chrome/Edge 不接受 SVG 作为扩展图标）。源文件见 public/icon/icon.svg
+    icons: {
+      "16": "/icon/icon-16.png",
+      "32": "/icon/icon-32.png",
+      "48": "/icon/icon-48.png",
+      "96": "/icon/icon-96.png",
+      "128": "/icon/icon-128.png",
+    },
+    action: {
+      default_icon: {
+        "16": "/icon/icon-16.png",
+        "32": "/icon/icon-32.png",
+        "48": "/icon/icon-48.png",
+        "128": "/icon/icon-128.png",
+      },
+    },
+    // Firefox MV2 使用 browser_action，WXT 不会自动把 action.default_icon 转换过去
+    ...(browser === "firefox"
+      ? {
+          browser_action: {
+            default_icon: {
+              "16": "/icon/icon-16.png",
+              "32": "/icon/icon-32.png",
+              "48": "/icon/icon-48.png",
+              "128": "/icon/icon-128.png",
+            },
+          },
+        }
+      : {}),
     permissions: [
       "tabs",
       "activeTab",
