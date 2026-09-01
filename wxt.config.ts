@@ -64,5 +64,10 @@ export default defineConfig({
         : []),
     ],
     host_permissions: ["<all_urls>"],
+    browser_specific_settings: {
+      gecko: {
+        id: process.env.FIREFOX_EXTENSION_ID!,
+      },
+    },
   }),
 });
