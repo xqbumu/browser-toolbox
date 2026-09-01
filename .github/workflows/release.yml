@@ -61,7 +61,9 @@ jobs:
           npx wxt build -b firefox --mv2
           npx web-ext sign --source-dir .output/firefox-mv2 \
             --api-key="$FIREFOX_JWT_ISSUER" \
-            --api-secret="$FIREFOX_JWT_PRIVATE_KEY"
+            --api-secret="$FIREFOX_JWT_PRIVATE_KEY" \
+            --channel unlisted \
+            --artifacts-dir artifacts
           npx wxt zip -b firefox --mv2 --sources
           # 签名版 XPI 重命名为 .zip 以便分发
           for f in artifacts/*.xpi; do
