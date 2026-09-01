@@ -59,6 +59,7 @@ jobs:
           FIREFOX_JWT_PRIVATE_KEY: ${{ secrets.FIREFOX_JWT_PRIVATE_KEY }}
         run: |
           npx wxt build -b firefox --mv2
+          node scripts/patch-firefox.mjs
           npx web-ext sign --source-dir .output/firefox-mv2 \
             --api-key="$FIREFOX_JWT_ISSUER" \
             --api-secret="$FIREFOX_JWT_PRIVATE_KEY" \
