@@ -63,7 +63,8 @@ jobs:
             --api-key="$FIREFOX_JWT_ISSUER" \
             --api-secret="$FIREFOX_JWT_PRIVATE_KEY" \
             --channel unlisted \
-            --artifacts-dir artifacts
+            --artifacts-dir artifacts \
+            --ignore-files='chunks/preload-helper-*.js'
           npx wxt zip -b firefox --mv2 --sources
           # 签名版 XPI 重命名为 .zip 以便分发
           for f in artifacts/*.xpi; do

@@ -15,7 +15,7 @@
     "zip": "wxt zip",
     "zip:chrome": "wxt zip -b chrome",
     "zip:firefox": "wxt zip -b firefox --mv2",
-    "sign:firefox": "web-ext sign --source-dir .output/firefox-mv2 --api-key=$FIREFOX_JWT_ISSUER --api-secret=$FIREFOX_JWT_PRIVATE_KEY --channel unlisted",
+    "sign:firefox": "web-ext sign --source-dir .output/firefox-mv2 --api-key=$FIREFOX_JWT_ISSUER --api-secret=$FIREFOX_JWT_PRIVATE_KEY --channel unlisted --artifacts-dir artifacts --ignore-files='chunks/preload-helper-*.js'",
     "build:sign:firefox": "pnpm build:firefox && pnpm sign:firefox",
     "compile": "tsc --noEmit",
     "icon": "node scripts/gen-icon.mjs",
