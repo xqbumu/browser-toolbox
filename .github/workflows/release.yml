@@ -52,14 +52,23 @@ jobs:
       - name: Build Chrome (MV3) zip
         run: npx wxt zip -b chrome --mv3
 
-      - name: Build Firefox (MV2) zip + sources zip
-        # AMO 要求压缩包内含源码，--sources 额外生成 *-sources.zip 供商店审核
-        run: npx wxt zip -b firefox --mv2 --sources
-
-      # 关键：upload-artifact 默认排除隐藏目录（.output 以 . 开头会被整体跳过，
-      # 导致 "No files were found"），先拷贝到非隐藏目录再上传
-      - name: Stage zips
+      - name: Build and sign Firefox (MV2)
+        env:
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_PRIVATE_KEY: ${{ secrets.FIREFOX_JWT_PRIVATE_KEY }}
         run: |
+          npx wxt build -b firefox --mv2
+          npx web-ext sign --source-dir .output/firefox-mv2 \
+            --api-key="$FIREFOX_JWT_ISSUER" \
+            --api-secret="$FIREFOX_JWT_PRIVATE_KEY"
+          npx wxt zip -b firefox --mv2 --sources
+          # 签名版 XPI 重命名为 .zip 以便分发
+          for f in artifacts/*.xpi; do
+            [ -f "$f" ] && mv "$f" "artifacts/browser-toolbox-1.1.0-firefox.zip"
+          done
+          # 移除 wxt zip 生成的无签名版 Firefox 安装包
+          rm -f .output/browser-toolbox-1.1.0-firefox.zip
           mkdir -p artifacts
           cp .output/*.zip artifacts/
           ls -la artifacts
