@@ -26,7 +26,7 @@ jobs:
   build:
     name: Build & zip
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -58,21 +58,38 @@ jobs:
           FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
           FIREFOX_JWT_PRIVATE_KEY: ${{ secrets.FIREFOX_JWT_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
+          PKG_VER=$(node -p "require('./package.json').version")
           npx wxt build -b firefox --mv2
           node scripts/patch-firefox.mjs
-          npx web-ext sign --source-dir .output/firefox-mv2 \
-            --api-key="$FIREFOX_JWT_ISSUER" \
-            --api-secret="$FIREFOX_JWT_PRIVATE_KEY" \
-            --channel unlisted \
-            --artifacts-dir artifacts \
-            --ignore-files='chunks/preload-helper-*.js'
+          # 勿加 --ignore-files：popup/options/history 静态 import preload-helper chunk，
+          # 排除会导致签名包 UI 白屏（2.0.2 缺陷已因此产生）。
+          # AMO 短时间连签会限流（约 16 分钟窗口），失败按窗口等待自动重试；
+          # 版本已存在等硬错误无法自动恢复，直接失败提示 bump 版本。
+          for attempt in 1 2 3; do
+            echo "[sign:firefox attempt $attempt/3] $(date -u '+%H:%M:%S')"
+            if npx web-ext sign --source-dir .output/firefox-mv2 \
+              --api-key="$FIREFOX_JWT_ISSUER" \
+              --api-secret="$FIREFOX_JWT_PRIVATE_KEY" \
+              --channel unlisted \
+              --artifacts-dir artifacts 2>&1 | tee /tmp/web-ext-sign.log; then
+              break
+            fi
+            secs=$(grep -oE 'Expected available in [0-9]+ seconds' /tmp/web-ext-sign.log | grep -oE '[0-9]+' | head -1)
+            if [[ -n "$secs" && $attempt -lt 3 ]]; then
+              wait=$((secs + 15))
+              echo "::warning::被 AMO 限流，等待 ${wait}s 后重试"
+              sleep "$wait"
+            else
+              echo "::error::web-ext sign 失败且无法自动恢复（版本已存在需 bump package.json version 重跑）"
+              exit 1
+            fi
+          done
           npx wxt zip -b firefox --mv2 --sources
           # 签名版 XPI 重命名为 .zip 以便分发
-          for f in artifacts/*.xpi; do
-            [ -f "$f" ] && mv "$f" "artifacts/browser-toolbox-1.1.0-firefox.zip"
-          done
+          mv artifacts/*.xpi "artifacts/browser-toolbox-${PKG_VER}-firefox.zip"
           # 移除 wxt zip 生成的无签名版 Firefox 安装包
-          rm -f .output/browser-toolbox-1.1.0-firefox.zip
+          rm -f ".output/browser-toolbox-${PKG_VER}-firefox.zip"
           mkdir -p artifacts
           cp .output/*.zip artifacts/
           ls -la artifacts
