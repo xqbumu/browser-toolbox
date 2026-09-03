@@ -5,23 +5,29 @@ const MANIFEST = `${DIR}/manifest.json`;
 const BACKGROUND = `${DIR}/background.js`;
 
 // AMO 对 manifest.version 只接受 1-4 段纯数字(每段 0-999999999、禁前导零、无字母/连字符)，
-// 且同 addon 同版本号判重、版本须单调递增。
-// 为免跨天发布人工 bump 撞 "already exists"，在签名前自动追加 YYMMDD 第 4 段：
-//   "2.0.3" → "2.0.3.260903"
-// 同日重复构建保持幂等(段值相同)；同日确需再发新版本时人工 bump 主链(2.0.3 → 2.0.4)即可。
+// 且同 addon 同版本号判重、版本须单调递增。git hash 含 hex 字母无法入版本号，
+// AMO 版本列表 API 又有索引滞后(本仓库已实证) —— 故唯一可靠防冲突因子是
+// 「每次发布动作的序号」：CI 注入 github.run_number，本地 fallback 分钟时间戳。
+// 签名前自动追加第 4 段：
+//   CI:    "2.0.3" → "2.0.3.47"   (github.run_number，每次 run 唯一)
+//   本地:  "2.0.3" → "2.0.3.29800000"  (epoch/60，跨平台无依赖)
+// 附带红利：断线/限流重跑是新 run 号 → 天然免疫 AMO 同版本 upload 锁死。
+//
+// 版本线纪律(单 addon 共用 stable 与 latest/preview 时)：
+//   - latest/preview：锁低位主链(如 2.0.3)，只靠第 4 段递增 → 永不 bump、可同日多发
+//   - stable：发布前 bump 主链并写完整 4 段(如 2.0.4.0)，脚本尊重 4 段不覆盖，
+//     保证 stable 恒高于所有历史 preview，已装 stable 的用户不会被后续 preview 高版本覆盖
 // 仅改写签名包的 manifest.json —— package.json/tag 仍用主链版本，tag 同步校验不受影响。
-function appendDateSegment(version) {
+function buildSegment() {
+  const run = process.env.RUN_NUMBER?.trim();
+  if (run && /^(0|[1-9][0-9]{0,8})$/.test(run)) return run; // CI run 序号
+  return String(Math.floor(Date.now() / 60000)); // 本地 fallback: 分钟时间戳(60s 粒度唯一)
+}
+
+function appendBuildSegment(version) {
   const segs = version.trim().split(".");
-  if (segs.length >= 4) return version; // 已是 4 段(含人工写死的)，尊重原值
-  const date = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .format(new Date())
-    .replace(/-/g, "");
-  return `${version}.${date}`;
+  if (segs.length >= 4) return version; // 已是 4 段(如人工写死的 stable 2.0.4.0)，尊重原值
+  return `${version}.${buildSegment()}`;
 }
 
 function patchManifest() {
@@ -33,7 +39,7 @@ function patchManifest() {
     process.exit(1);
   }
   const before = manifest.version;
-  const after = appendDateSegment(before);
+  const after = appendBuildSegment(before);
   if (after !== before) {
     manifest.version = after;
     writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2));

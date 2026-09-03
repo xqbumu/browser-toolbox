@@ -57,6 +57,9 @@ jobs:
           FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
           FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
           FIREFOX_JWT_PRIVATE_KEY: ${{ secrets.FIREFOX_JWT_PRIVATE_KEY }}
+          # patch-firefox.mjs 追加为 manifest 第 4 段版本号(每次 run 唯一,
+          # 同日多次 latest/限流重跑均不撞 AMO already exists；本地无此 env 时 fallback 分钟时间戳)
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
           PKG_VER=$(node -p "require('./package.json').version")
