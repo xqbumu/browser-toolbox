@@ -1,5 +1,20 @@
 import { defineConfig } from "wxt";
 
+// AMO 对 browser_specific_settings.gecko.id 只接受两种格式：
+//   1) "{GUID}" —— 花括号包裹的 UUID（8-4-4-4-12）
+//   2) "name@domain" —— email 形
+// 裸 UUID（无花括号）提交会被 addons.mozilla.org 以 JSON_INVALID 拒绝。
+// 此处统一归一化：裸 UUID 自动补花括号；其余格式（含 email 形）原样透传。
+function normalizeGeckoId(raw: string | undefined): string {
+  const id = (raw ?? "").trim();
+  const bare = id.replace(/^\{/, "").replace(/\}$/, "");
+  const isBareUuid =
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+      bare,
+    );
+  return isBareUuid ? `{${bare}}` : id;
+}
+
 // 说明：
 // - WXT 0.21 的 `modules` 仍接受包名字符串（module-react 沿用字符串形式注册）。
 // - manifest 使用函数形式：请求头改写工具需要按目标浏览器注入不同权限——
@@ -18,7 +33,7 @@ export default defineConfig({
     name: "浏览器工具箱",
     description:
       "截图与请求头改写工具箱：整页滚动长图、选区/批量截图、Header 规则改写",
-    version: "2.0.0",
+    version: "2.0.3",
     // 图标（PNG，Chrome/Edge 不接受 SVG 作为扩展图标）。源文件见 public/icon/icon.svg
     icons: {
       "16": "/icon/icon-16.png",
@@ -71,7 +86,7 @@ export default defineConfig({
     host_permissions: ["<all_urls>"],
     browser_specific_settings: {
       gecko: {
-        id: process.env.FIREFOX_EXTENSION_ID!,
+        id: normalizeGeckoId(process.env.FIREFOX_EXTENSION_ID),
         data_collection_permissions: {
           required: ["none"],
         },

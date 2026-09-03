@@ -2,7 +2,7 @@
   "name": "browser-toolbox",
   "description": "网页截图助手：跨浏览器整页滚动截图 / 可见区域 / 选定区域截图 + 批量截图",
   "private": true,
-  "version": "1.1.0",
+  "version": "2.0.3",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -15,7 +15,7 @@
     "zip": "wxt zip",
     "zip:chrome": "wxt zip -b chrome",
     "zip:firefox": "wxt zip -b firefox --mv2",
-    "sign:firefox": "node scripts/patch-firefox.mjs && web-ext sign --source-dir .output/firefox-mv2 --api-key=$FIREFOX_JWT_ISSUER --api-secret=$FIREFOX_JWT_PRIVATE_KEY --channel unlisted --artifacts-dir artifacts --ignore-files='chunks/preload-helper-*.js'",
+    "sign:firefox": "node scripts/patch-firefox.mjs && web-ext sign --source-dir .output/firefox-mv2 --api-key=$FIREFOX_JWT_ISSUER --api-secret=$FIREFOX_JWT_PRIVATE_KEY --channel unlisted --artifacts-dir artifacts",
     "build:sign:firefox": "pnpm build:firefox && pnpm sign:firefox",
     "compile": "tsc --noEmit",
     "icon": "node scripts/gen-icon.mjs",

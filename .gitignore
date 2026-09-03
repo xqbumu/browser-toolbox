@@ -8,6 +8,9 @@ dist/
 build/
 *.zip
 
+# 签名产物（web-ext sign 输出 xpi）
+artifacts/
+
 # 测试
 coverage/
 vitest.config.ts.timestamp-*.mjs
