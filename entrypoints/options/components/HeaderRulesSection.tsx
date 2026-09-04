@@ -23,6 +23,7 @@ import { ThemeToggle } from "@/ui/theme-toggle";
 import { detectHeaderEngine } from "@/core/headers/engine";
 import { ConfirmDialog } from "@/ui/kit";
 import { newHeaderGroup, type HeaderGroup } from "@/types/headers";
+import { collectLearnedHeaderNames } from "@/utils/header-hints";
 
 async function request<T>(msg: PopupRequest): Promise<T> {
   const res = (await browser.runtime.sendMessage(msg)) as PopupResponse<T>;
@@ -33,11 +34,27 @@ async function request<T>(msg: PopupRequest): Promise<T> {
 export function HeaderRulesSection() {
   const [rules, setRules] = useState<HeaderRule[]>([]);
   const dnrLimited = detectHeaderEngine() === "dnr";
+  const [groups, setGroups] = useState<HeaderGroup[]>([]);
+  const groupOffOf = (rule: HeaderRule): boolean =>
+    rule.groupId != null &&
+    !groups.find((g) => g.id === rule.groupId)?.enabled;
+  const warnGroupOff = (): void => {
+    void MessagePlugin.warning({
+      content: "分组已停用，组内规则暂不生效——请先开启分组",
+      duration: 2500,
+    });
+  };
   // 会话级临时覆盖（仅当前会话，重启即清）
   const [sessionOv, setSessionOv] = useState<Record<string, boolean>>({});
   async function toggleSession(id: string): Promise<void> {
+    const rule = rules.find((r) => r.id === id);
     const has = id in sessionOv;
-    const nextOv = has ? null : !rules.find((r) => r.id === id)?.enabled;
+    const nextOv = has ? null : !rule?.enabled;
+    // 「强制启用」方向受组开关约束：组停用时先提示开启分组
+    if (rule && nextOv === true && groupOffOf(rule)) {
+      warnGroupOff();
+      return;
+    }
     const prev = sessionOv;
     setSessionOv((m) => {
       const copy = { ...m };
@@ -55,7 +72,6 @@ export function HeaderRulesSection() {
       setSessionOv(prev);
     }
   }
-  const [groups, setGroups] = useState<HeaderGroup[]>([]);
   const [editing, setEditing] = useState<HeaderRule | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -99,6 +115,12 @@ export function HeaderRulesSection() {
   }
 
   async function toggle(id: string, enabled: boolean): Promise<void> {
+    // 组停用 = 整组暂停：仅拦截「启用」方向，避免「显示已启用但引擎不生效」
+    const rule = rules.find((r) => r.id === id);
+    if (rule && enabled && groupOffOf(rule)) {
+      warnGroupOff();
+      return;
+    }
     const prev = rules;
     setRules((rs) => rs.map((r) => (r.id === id ? { ...r, enabled } : r)));
     try {
@@ -212,6 +234,7 @@ export function HeaderRulesSection() {
         <HeaderRuleEditor
           draft={editing}
           groups={groups}
+          learnedNames={collectLearnedHeaderNames(rules)}
           onChange={setEditing}
           onSave={save}
           onCancel={() => setEditing(null)}
@@ -224,7 +247,7 @@ export function HeaderRulesSection() {
           .map((rule) => (
             <li
               key={rule.id}
-              className={`rule-row${rule.enabled ? "" : " disabled"}`}
+              className={`rule-row${rule.enabled ? "" : " disabled"}${groupOffOf(rule) ? " group-off" : ""}`}
             >
               <Switch
                 size="small"
@@ -234,6 +257,17 @@ export function HeaderRulesSection() {
               <div className="rule-meta">
                 <span className="rule-name">
                   {rule.name || "未命名规则"}
+                  {(() => {
+                    const g = rule.groupId
+                      ? groups.find((x) => x.id === rule.groupId)
+                      : undefined;
+                    if (!g) return null;
+                    return g.enabled ? (
+                      <span className="badge group">{g.name}</span>
+                    ) : (
+                      <span className="badge warn">{g.name} · 已停用</span>
+                    );
+                  })()}
                   {dnrLimited &&
                     ((rule.condition.excludeRegex ?? []).some((p) =>
                       p.trim(),

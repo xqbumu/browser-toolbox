@@ -1,0 +1,525 @@
+/* 请求头管理中心（独立标签页）样式。页面基础令牌与其它页面一致（tdesign vars + tool-ui）。 */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+  color: #1f2329;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+}
+
+.hm-page {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 28px 24px 80px;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.page-head h1 {
+  font-size: 20px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.count-tag {
+  font-size: 12px;
+  font-weight: 400;
+  background: var(--tb-brand-light, #ecf2fe);
+  color: var(--td-brand-color, #0052d9);
+  border-radius: 999px;
+  padding: 1px 10px;
+}
+.hm-engine-tag {
+  font-size: 11px;
+  font-weight: 400;
+  color: #6b7280;
+  background: #eceef1;
+  border-radius: 4px;
+  padding: 1px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+.off {
+  opacity: 0.6;
+}
+
+.hm-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid var(--td-component-border, #eef0f3);
+  border-radius: 999px;
+  padding: 4px 12px 4px 10px;
+}
+
+/* Tabs 区 */
+.hm-page .t-tabs {
+  margin-top: 6px;
+}
+.hm-tab-content {
+  padding-top: 14px;
+}
+.hm-tab-content > .t-alert {
+  margin-bottom: 10px;
+}
+
+/* ---- 规则页 工作区布局 ---- */
+.hm-work {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 16px;
+  align-items: start;
+  margin-top: 12px;
+}
+.hm-side {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hm-side-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  margin: 0 0 6px;
+}
+.hm-seg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.hm-seg:hover {
+  background: var(--tb-surface-2, #f2f3f5);
+}
+.hm-seg.active {
+  background: var(--tb-brand-light, #ecf2fe);
+  color: var(--td-brand-color, #0052d9);
+  font-weight: 500;
+}
+.hm-count {
+  font-size: 11px;
+  color: #9ca3af;
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 999px;
+  padding: 0 7px;
+  line-height: 16px;
+}
+.hm-seg.active .hm-count {
+  color: var(--td-brand-color, #0052d9);
+  background: rgba(0, 82, 217, 0.1);
+}
+
+.hm-group-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.hm-seg-group {
+  justify-content: flex-start;
+  padding: 4px 6px;
+}
+.hm-seg-group.off {
+  opacity: 0.6;
+}
+.hm-seg-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 13px;
+  padding: 3px 2px;
+  text-align: left;
+}
+.hm-seg-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-seg-rename {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid var(--td-brand-color, #0052d9);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: inherit;
+  background: var(--td-bg-color-container, #fff);
+}
+.hm-icon-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1;
+}
+.hm-icon-btn:hover {
+  background: var(--tb-surface-2, #f2f3f5);
+}
+.hm-icon-btn.danger:hover {
+  color: var(--td-error-color, #d54941);
+  background: var(--td-error-color-light, #fdecec);
+}
+.hm-side-hint {
+  margin-top: 2px;
+}
+.hm-group-create {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.hm-group-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--td-component-border, #dcdcdc);
+  border-radius: 6px;
+  font-size: 13px;
+  color: inherit;
+  background: var(--td-bg-color-container, #fff);
+}
+
+/* ---- 规则主区 ---- */
+.hm-main {
+  min-width: 0;
+}
+.hm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.hm-seg-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.hm-seg-info strong {
+  font-weight: 600;
+}
+.hm-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.hm-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* .rule-row.group-off 弱化样式已上移 ui/tool-ui.css（popup/options/manager 三端共用） */
+.hm-rule-ops {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.hm-text-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--td-brand-color, #0052d9);
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.hm-text-btn:hover {
+  background: var(--td-brand-color-light, #ecf2fe);
+}
+.hm-text-btn.danger {
+  color: var(--td-error-color, #d54941);
+}
+.hm-text-btn.danger:hover {
+  background: var(--td-error-color-light, #fdecec);
+}
+.hm-session-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #8b5cf6;
+  font-size: 13px;
+  padding: 3px 7px;
+  border-radius: 6px;
+}
+.hm-session-btn:hover {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.hm-editor-card {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+/* ---- 徽标：基础样式已上移至 ui/tool-ui.css（popup/options/manager 三端共用） ---- */
+
+/* ---- 日志页 ---- */
+.hm-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.hm-set-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.hm-set-label {
+  font-size: 13px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hm-set-label .hint {
+  display: inline;
+  margin: 0;
+}
+.hm-set-line .t-input-number {
+  width: 160px;
+}
+
+.hm-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.hm-log-table th,
+.hm-log-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.hm-log-table th {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+  background: #fafbfc;
+}
+.hm-log-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.hm-log-table tbody tr:hover td {
+  background: #fafbfc;
+}
+.hm-log-table .nowrap {
+  white-space: nowrap;
+}
+.hm-log-rule {
+  margin-right: 6px;
+}
+.hm-log-host {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge.dir {
+  background: var(--td-brand-color-light, #ecf2fe);
+  color: var(--td-brand-color, #0052d9);
+}
+.badge.dir.response {
+  background: var(--td-success-color-light, #e3f9e9);
+  color: var(--td-success-color, #2ba471);
+}
+
+/* ---- 统计页 ---- */
+.hm-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.hm-kpi {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hm-kpi-num {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--td-brand-color, #0052d9);
+}
+.hm-kpi-sub {
+  font-style: normal;
+  font-size: 12px;
+  color: #9ca3af;
+  margin: 0 4px 0 2px;
+  font-weight: 400;
+}
+.hm-kpi-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+.hm-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.hm-panel {
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.hm-panel h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.hm-bar-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.hm-bar-label {
+  width: 120px;
+  flex-shrink: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hm-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #f0f1f3;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.hm-bar {
+  height: 100%;
+  background: var(--td-brand-color, #0052d9);
+  border-radius: 999px;
+  min-width: 4px;
+}
+.hm-bar-count {
+  width: 48px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+.hm-days {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 150px;
+}
+.hm-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  min-width: 0;
+}
+.hm-day-col {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  width: 100%;
+}
+.hm-day-bar {
+  width: 100%;
+  max-width: 22px;
+  margin: 0 auto;
+  background: var(--td-brand-color, #0052d9);
+  border-radius: 4px 4px 0 0;
+  opacity: 0.85;
+}
+.hm-day-bar:hover {
+  opacity: 1;
+}
+.hm-day-label {
+  font-size: 10px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .hm-work {
+    grid-template-columns: 1fr;
+  }
+  .hm-stats-grid,
+  .hm-kpis {
+    grid-template-columns: 1fr;
+  }
+}

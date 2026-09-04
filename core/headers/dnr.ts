@@ -3,8 +3,9 @@
  * - 一条 HeaderRule 按作用目标拆成至多 N 条 DNR 规则（modifyHeaders 单动作只支持一个方向）；
  * - URL 条件按匹配方式构造：
  *   · pattern：多模式展开为多条规则；全匹配吞并其余模式，urlFilter 省略 = 匹配全部；
+ *   · prefix/suffix：转义并加 ^ / $ 锚点的 RE2 正则（字面匹配）；
  *   · contains：子串转义为等价 RE2 正则；
- *   · regex：表达式原样透传（RE2 语法）。
+ *   · regex：RE2 语法，自动前缀 (?i) 与 MV2 路径大小写不敏感对齐（自带 (?…) 旗标时原样透传）。
  * - DNR 的 requestMethods 为小写；resourceTypes 命名与本仓库一致可直接透传。
  * 输出使用结构化最小类型而非 chrome 命名空间，保证 node 测试环境零依赖。
  */
@@ -96,8 +97,22 @@ function buildUrlConditions(
         out.push({ value: v, isRegex: false });
       }
     } else {
+      // contains：子串转义为正则；prefix/suffix：转义并加 ^ / $ 锚点；regex：RE2 表达式。
+      // 说明：urlFilter 模式语法无法安全表达字面量（无转义机制），故沿用现有 contains 的正则化路线。
+      // 大小写一致性：MV2 路径 regex 一律 new RegExp(v, "i")（不敏感），RE2 regexFilter 默认敏感，
+      // 故此处对用户 regex 前缀 (?i) 对齐两端；用户自带 (?…) 旗标开头时按原样（自行控制）。
       const isRegex = m.matchType === "regex";
-      const value = isRegex ? v : escapeRe2(v);
+      const escaped = escapeRe2(v);
+      const value =
+        m.matchType === "prefix"
+          ? `^${escaped}`
+          : m.matchType === "suffix"
+            ? `${escaped}$`
+            : isRegex
+              ? /^\(\?/.test(v)
+                ? v
+                : `(?i)${v}`
+              : escaped;
       const key = `${m.matchType}:${value}`;
       if (!seen.has(key)) {
         seen.add(key);

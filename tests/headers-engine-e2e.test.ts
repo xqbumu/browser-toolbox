@@ -173,6 +173,58 @@ describe("引擎端到端（webRequest 路径）", () => {
     expect(res?.redirectUrl).toBe("https://other.com/y");
   });
 
+  it("MV2 缓存重建清零：删除 cancel 规则后再 sync 不再取消（P0 回归）", async () => {
+    store["headerRules"] = [rule({ kind: "cancel" })];
+    store["headerEnabled"] = true;
+    engine = await createHeaderEngine();
+    await engine?.sync();
+    expect(
+      (shim.__listeners.onBeforeRequest?.({
+        url: "https://api.example.com/x",
+        method: "GET",
+        type: "main_frame",
+      }) as { cancel?: boolean } | undefined)?.cancel,
+    ).toBe(true);
+
+    // 删除规则后同一引擎再 sync：内存缓存必须清空残留的 cancel 规则
+    store["headerRules"] = [];
+    await engine?.sync();
+    expect(
+      shim.__listeners.onBeforeRequest?.({
+        url: "https://api.example.com/x",
+        method: "GET",
+        type: "main_frame",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("正则重定向：redirectTo 用 RE2/DNR 替换语法（\\1）时 MV2 等价命中捕获组", async () => {
+    store["headerRules"] = [
+      rule({
+        kind: "redirect",
+        redirectTo: "https://other.com/files/\\1",
+        condition: {
+          matches: [
+            {
+              matchType: "regex",
+              value: "^https://api\\.example\\.com/([a-z]+)$",
+            },
+          ],
+        },
+      }),
+    ];
+    store["headerEnabled"] = true;
+    engine = await createHeaderEngine();
+    await engine?.sync();
+    const res = shim.__listeners.onBeforeRequest?.({
+      url: "https://api.example.com/x",
+      method: "GET",
+      type: "main_frame",
+    }) as { redirectUrl?: string } | undefined;
+    // MV2 侧把 \1 翻译为 JS $1，与 DNR regexSubstitution 语义对齐
+    expect(res?.redirectUrl).toBe("https://other.com/files/x");
+  });
+
   it("查询改写：onBeforeRequest 返回带新参数的 redirectUrl", async () => {
     const L = await bootWith(
       rule({
@@ -227,5 +279,57 @@ describe("引擎端到端（webRequest 路径）", () => {
     }) as { requestHeaders?: { name: string; value: string }[] };
     expect(res?.requestHeaders?.some((h) => h.name === "X-Sess")).toBe(true);
     setSessionOverride("e2e-1", null);
+  });
+
+  it("改写成功上报：onRewrite 在实际改写发生时携带规则与分组归属", async () => {
+    store["headerRules"] = [
+      rule({
+        name: "登录接口",
+        groupId: "g-api",
+        actions: [
+          { target: "request", op: "set", name: "X-Token", value: "t1" },
+        ],
+      }),
+    ];
+    store["headerGroups"] = [
+      { id: "g-api", name: "API 分组", enabled: true, createdAt: 1 },
+    ];
+    store["headerEnabled"] = true;
+    const onRewrite = vi.fn();
+    engine = await createHeaderEngine({ onRewrite });
+    await engine?.sync();
+
+    // 命中：应上报一次 request 事件
+    shim.__listeners.onBeforeSendHeaders?.({
+      url: "https://api.example.com/x",
+      method: "GET",
+      type: "main_frame",
+      requestHeaders: [{ name: "Accept", value: "*/*" }],
+    });
+    expect(onRewrite).toHaveBeenCalledTimes(1);
+    expect(onRewrite.mock.calls[0]![0]).toMatchObject({
+      ruleId: "e2e-1",
+      ruleName: "登录接口",
+      groupId: "g-api",
+      groupName: "API 分组",
+      target: "request",
+      url: "https://api.example.com/x",
+      method: "GET",
+      actionCount: 1,
+    });
+
+    // 未命中 URL：不上报
+    onRewrite.mockClear();
+    shim.__listeners.onBeforeSendHeaders?.({
+      url: "https://other.com/x",
+      method: "GET",
+      type: "main_frame",
+      requestHeaders: [{ name: "Accept", value: "*/*" }],
+    });
+    expect(onRewrite).not.toHaveBeenCalled();
+
+    // 未传 onRewrite：缺省 no-op（不抛错）
+    engine = await createHeaderEngine();
+    await engine?.sync();
   });
 });

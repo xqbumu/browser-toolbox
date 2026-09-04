@@ -11,6 +11,11 @@ import type {
 } from "./capture";
 import type { CaptureConfig } from "./config";
 import type { HeaderRule, HeaderGroup } from "./headers";
+import type {
+  HeaderRewriteLogEntry,
+  HeaderLogSettings,
+  HeaderRewriteStats,
+} from "./header-log";
 
 // ---- 取消粒度 / 整页分阶段 / toast 种类（P0 优化） ----
 
@@ -117,6 +122,20 @@ export type PopupRequest =
   | { type: "GROUPS_SAVE"; payload: { group: HeaderGroup } }
   | { type: "GROUPS_DELETE"; payload: { id: string } }
   | { type: "GROUPS_TOGGLE"; payload: { id: string; enabled: boolean } }
+  | {
+      // 按组批量启停成员规则（组开关本身不动；返回更新条数）
+      type: "GROUPS_SET_RULES";
+      payload: { groupId: string; enabled: boolean };
+    }
+  // ---- 改写日志与统计 ----
+  | { type: "HEADER_LOG_LIST"; payload: { limit?: number } } // 返回 { entries, total }
+  | { type: "HEADER_LOG_CLEAR"; payload: Record<string, never> }
+  | { type: "HEADER_LOG_STATS"; payload: Record<string, never> } // 返回 HeaderRewriteStats
+  | { type: "HEADER_LOG_SETTINGS_GET"; payload: Record<string, never> }
+  | {
+      type: "HEADER_LOG_SETTINGS_SET";
+      payload: Partial<HeaderLogSettings>;
+    }
   // ---- MCP 本地服务（仅 Chrome/Edge 经 chrome.sockets 起本地端点） ----
   | { type: "MCP_STATUS"; payload: Record<string, never> }
   | { type: "MCP_START"; payload: Record<string, never> }

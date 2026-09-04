@@ -39,7 +39,12 @@ export interface HeaderAction {
 }
 
 /** URL 匹配方式 */
-export type UrlMatchType = "pattern" | "contains" | "regex";
+export type UrlMatchType =
+  | "pattern" // match pattern（Chrome 风格）
+  | "prefix" // URL 以指定串开头
+  | "suffix" // URL 以指定串结尾
+  | "contains" // URL 包含指定子串
+  | "regex"; // URL 正则表达式
 
 /** 单条 URL 匹配规则（组内成员） */
 export interface UrlMatchItem {
@@ -400,6 +405,8 @@ export function describeCondition(condition: HeaderRuleCondition): string {
   if (ms.length === 0) return "无匹配条件";
   const label = (m: UrlMatchItem): string => {
     const v = m.value?.trim() ?? "";
+    if (m.matchType === "prefix") return `前缀 ${v}`;
+    if (m.matchType === "suffix") return `后缀 ${v}`;
     if (m.matchType === "contains") return `含 ${v}`;
     if (m.matchType === "regex") return `re: ${v}`;
     return v;

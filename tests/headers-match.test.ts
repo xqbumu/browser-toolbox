@@ -5,6 +5,7 @@ import {
   urlMatchesPattern,
 } from "@/core/headers/match";
 import {
+  describeCondition,
   newHeaderRule,
   type HeaderRule,
   type UrlMatchItem,
@@ -90,6 +91,36 @@ describe("条件组（matches）判定", () => {
         "https://a.com/",
       ),
     ).toBe(false);
+  });
+});
+
+describe("prefix / suffix 匹配方式", () => {
+  const c = (m: UrlMatchItem) => ({ matches: [m] }) as HeaderRule["condition"];
+
+  it("prefix 命中 URL 开头，不误匹配相邻前缀", () => {
+    const cond = c({ matchType: "prefix", value: "https://api.example.com/" });
+    expect(conditionMatches(cond, "https://api.example.com/v1/x")).toBe(true);
+    expect(conditionMatches(cond, "https://api.example.com")).toBe(false);
+    expect(conditionMatches(cond, "https://api.example.com.evil.org/x")).toBe(
+      false,
+    );
+  });
+
+  it("suffix 按完整 URL 字面结尾匹配（含查询串 / 锚点会中断）", () => {
+    const cond = c({ matchType: "suffix", value: "/api/v1" });
+    expect(conditionMatches(cond, "https://a.com/api/v1")).toBe(true);
+    // 后缀作用于完整 URL 字符串：带查询串时不命中（如需忽略查询请用正则）
+    expect(conditionMatches(cond, "https://a.com/api/v1?x=1")).toBe(false);
+    expect(conditionMatches(cond, "https://a.com/api/v1x")).toBe(false);
+  });
+
+  it("describeCondition 输出可读标签", () => {
+    expect(
+      describeCondition(c({ matchType: "prefix", value: "https://a.com/" })),
+    ).toBe("前缀 https://a.com/");
+    expect(
+      describeCondition(c({ matchType: "suffix", value: "/v1" })),
+    ).toBe("后缀 /v1");
   });
 });
 

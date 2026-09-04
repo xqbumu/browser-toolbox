@@ -6,11 +6,13 @@
  * sync() 幂等：DNR 先清理本引擎 id 区间再写入；webRequest 直接替换内存缓存。
  */
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
+import type { HeaderRewriteHit } from "@/types/header-log";
 import { DNR_START_ID, toDnrRules } from "./dnr";
 import {
   applyHeaderActions,
   applyQueryTransform,
-  pickActions,
+  collectRuleHits,
+  type RuleTargetHit,
 } from "./webrequest";
 import { rewriteResponse } from "./body";
 import {
@@ -125,11 +127,79 @@ export interface HeaderEngine {
   dispose(): void;
 }
 
-export async function createHeaderEngine(): Promise<HeaderEngine | null> {
+/**
+ * 改写成功回调负载即 HeaderRewriteHit（无 id/ts，由日志层补齐）。
+ * 上报语义按引擎路径区分（详见 createHeaderEngine 注释）。
+ */
+export interface HeaderEngineOptions {
+  onRewrite?: (hit: HeaderRewriteHit) => void;
+}
+
+/** DNR 引擎能实际应用的规则子集（仅 headers 动作 + 无 URL 正则排除，与 toDnrRules 跳过逻辑一致） */
+function dnrApplicableHeaders(rules: HeaderRule[]): HeaderRule[] {
+  return rules.filter(
+    (r) =>
+      (r.kind ?? "headers") === "headers" &&
+      !(r.condition.excludeRegex ?? []).some((p) => p.trim()),
+  );
+}
+
+async function loadGroupNames(): Promise<Map<string, string>> {
+  const groups = await listGroups().catch(() => []);
+  return new Map(groups.map((g) => [g.id, g.name]));
+}
+
+/**
+ * 正则重定向替换串语法桥：DNR(regexSubstitution) 用 RE2 语法（\1 引用捕获组、\$ 转义），
+ * 而 MV2 走 String.replace 需 $1 语法。本函数把 RE2/DNR 风格翻译为 JS 风格，
+ * 使同一 redirectTo 在两端行为一致（规范以 DNR/RE2 为准）。
+ */
+function toJsReplacement(replacement: string): string {
+  return replacement.replace(/\\(0|[1-9]|\$|\\)/g, (m, p: string) => {
+    if (p === "0") return "$&"; // \0 = 整段匹配（JS 用 $&）
+    if (p === "$") return "$"; // \$ → 字面 $（JS 中 $ 非特殊组合即字面）
+    if (p === "\\") return "\\"; // \\ → 字面反斜杠
+    return `$${p}`; // \1..\9 → $1..$9
+  });
+}
+
+export async function createHeaderEngine(
+  options: HeaderEngineOptions = {},
+): Promise<HeaderEngine | null> {
+  const { onRewrite } = options;
   // 恢复 MV3 下跨 Service Worker 重启的会话覆盖（Firefox MV2 无 storage.session 时为空操作）
   await loadSessionOverrides();
   const kind = detectHeaderEngine();
   if (kind == null) return null;
+
+  /** 逐命中规则上报一次「改写成功」事件（无回调时为 no-op） */
+  function reportHits(
+    hits: RuleTargetHit[],
+    url: string,
+    method: string | undefined,
+    target: HeaderRewriteHit["target"],
+    groupNames: Map<string, string>,
+  ): void {
+    if (!onRewrite || hits.length === 0) return;
+    for (const { rule, actions } of hits) {
+      try {
+        onRewrite({
+          ruleId: rule.id,
+          ruleName: rule.name?.trim() || rule.id,
+          groupId: rule.groupId,
+          groupName:
+            rule.groupId != null ? groupNames.get(rule.groupId) : undefined,
+          target,
+          url,
+          method,
+          actionCount: actions.length,
+        });
+      } catch (e) {
+        // 上报回调（日志落盘）失败绝不影响阻塞式请求改写
+        log.warn("改写上报回调异常（已忽略，不影响请求）", e);
+      }
+    }
+  }
 
   if (kind === "dnr") {
     const dnr = (
@@ -143,12 +213,66 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
         };
       }
     ).declarativeNetRequest;
+
+    // MV3 声明式规则在浏览器内部评估，无运行期回调；改写成功日志依赖只读 webRequest 观测
+    // 命中判定（命中即由 DNR 应用，口径与声明式行为一致）。Chrome 支持；Safari 无 webRequest
+    // → 不附加监听、不产生日志（UI 侧按能力提示）。
+    type ObsDetail = { url: string; method?: string; type?: string };
+    type ObsEvent = {
+      addListener: (
+        cb: (d: ObsDetail) => void,
+        filter: { urls: string[] },
+        extra: string[],
+      ) => void;
+      removeListener: (cb: (d: ObsDetail) => void) => void;
+    };
+    const obsWebRequest =
+      onRewrite !== undefined
+        ? ((browser as unknown as { webRequest?: unknown }).webRequest as
+            | { onBeforeSendHeaders?: ObsEvent; onHeadersReceived?: ObsEvent }
+            | undefined)
+        : undefined;
+    const obsCleanups: Array<{
+      event: ObsEvent;
+      cb: (d: ObsDetail) => void;
+    }> = [];
+    // 观测用的生效规则快照（headers 动作、无 DNR 无法表达的排除项），随 sync 更新
+    let effectiveForLog: HeaderRule[] = [];
+    let groupNames = new Map<string, string>();
+
+    function attachObserver(
+      event: ObsEvent | undefined,
+      target: HeaderRewriteHit["target"],
+    ): void {
+      if (!event?.addListener) return;
+      const cb = (details: ObsDetail): void => {
+        const resourceType = details.type as HeaderResourceType | undefined;
+        const hits = collectRuleHits(
+          effectiveForLog,
+          details.url,
+          target,
+          details.method,
+          resourceType,
+        );
+        if (hits.length > 0) {
+          reportHits(hits, details.url, details.method, target, groupNames);
+        }
+      };
+      event.addListener(cb, { urls: ["<all_urls>"] }, []);
+      obsCleanups.push({ event, cb });
+    }
+    attachObserver(obsWebRequest?.onBeforeSendHeaders, "request");
+    attachObserver(obsWebRequest?.onHeadersReceived, "response");
+
     return {
       kind,
       async sync(): Promise<void> {
         const masterOn = await isHeaderMasterEnabled();
         const rules = masterOn ? await listEffectiveRules() : [];
         const next = toDnrRules(rules);
+        // 仅观测 DNR 实际下发的 headers 规则（含 groupName 快照，供日志归属展示）
+        effectiveForLog = dnrApplicableHeaders(rules);
+        groupNames = await loadGroupNames();
         // 仅清理本引擎 id 区间内的动态规则，避免误删其他来源
         const existing = await new Promise<{ id: number }[]>((resolve) =>
           dnr.getDynamicRules((all) =>
@@ -161,13 +285,23 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
         });
         log.info(`DNR 引擎已同步 ${next.length} 条动态规则`);
       },
-      dispose(): void {},
+      dispose(): void {
+        for (const { event, cb } of obsCleanups) {
+          try {
+            event.removeListener(cb);
+          } catch {
+            // 监听可能已被整体卸载，忽略
+          }
+        }
+        obsCleanups.length = 0;
+      },
     };
   }
 
   // webrequest：内存缓存 + 阻塞监听
   let enabled: HeaderRule[] = [];
   let bodyRules: HeaderRule[] = [];
+  let groupNames = new Map<string, string>();
 
   // webRequest 的 type 字符串与本仓库 HeaderResourceType 命名一致，未知类型保守返回 undefined
   const RESOURCE_TYPE_SET: ReadonlySet<string> = new Set([
@@ -195,16 +329,20 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       details.type && RESOURCE_TYPE_SET.has(details.type)
         ? (details.type as HeaderResourceType)
         : undefined;
-    const actions = pickActions(
+    const hits = collectRuleHits(
       enabled,
       details.url,
       "request",
       details.method,
       resourceType,
     );
-    if (actions.length === 0 || !details.requestHeaders) return undefined;
+    if (hits.length === 0 || !details.requestHeaders) return undefined;
+    reportHits(hits, details.url, details.method, "request", groupNames);
     return {
-      requestHeaders: applyHeaderActions(details.requestHeaders, actions),
+      requestHeaders: applyHeaderActions(
+        details.requestHeaders,
+        hits.flatMap((h) => h.actions),
+      ),
     };
   };
   const onHeadersReceived = (details: {
@@ -218,7 +356,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       details.type && RESOURCE_TYPE_SET.has(details.type)
         ? (details.type as HeaderResourceType)
         : undefined;
-    const actions = pickActions(
+    const hits = collectRuleHits(
       enabled,
       details.url,
       "response",
@@ -226,9 +364,13 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       resourceType,
     );
     maybeRewriteBody(details, resourceType);
-    if (actions.length === 0 || !details.responseHeaders) return undefined;
+    if (hits.length === 0 || !details.responseHeaders) return undefined;
+    reportHits(hits, details.url, details.method, "response", groupNames);
     return {
-      responseHeaders: applyHeaderActions(details.responseHeaders, actions),
+      responseHeaders: applyHeaderActions(
+        details.responseHeaders,
+        hits.flatMap((h) => h.actions),
+      ),
     };
   };
 
@@ -267,8 +409,7 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
   // cancel / redirect / query 规则在 onBeforeRequest 阶段处理
   let cancelRules: HeaderRule[] = [];
   let redirectRules: HeaderRule[] = [];
-  let queryRules: HeaderRule[] = [];
-  function resolveBeforeRequest(
+  let queryRules: HeaderRule[] = [];  function resolveBeforeRequest(
     url: string,
     method?: string,
     resourceType?: HeaderResourceType,
@@ -297,7 +438,9 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
       if (regexItem?.value) {
         try {
           const re = new RegExp(regexItem.value, "i");
-          if (re.test(url)) return { redirectUrl: url.replace(re, to) };
+          if (re.test(url)) {
+            return { redirectUrl: url.replace(re, toJsReplacement(to)) };
+          }
         } catch {
           // 非法正则不处理
         }
@@ -382,14 +525,18 @@ export async function createHeaderEngine(): Promise<HeaderEngine | null> {
   return {
     kind,
     async sync(): Promise<void> {
+      groupNames = await loadGroupNames();
       const all = await listEffectiveRules();
-      const headersOnly: HeaderRule[] = [];
+      // 全量重建内存缓存：四个动作分类数组都必须先清空，否则删除/修改规则后
+      // 旧条目残留（cancel/redirect/query 曾被遗漏重置，导致删规则不生效）。
       enabled = [];
       bodyRules = [];
+      cancelRules = [];
+      redirectRules = [];
+      queryRules = [];
       for (const r of all) {
         if ((r.kind ?? "headers") === "headers") {
           enabled.push(r);
-          headersOnly.push(r);
         } else if (r.kind === "cancel") {
           cancelRules.push(r);
         } else if (r.kind === "redirect") {

@@ -51,7 +51,18 @@ import {
   saveGroup,
   toggleHeaderRule,
   toggleGroup,
+  toggleRulesByGroup,
 } from "@/utils/header-rules-store";
+import {
+  clearHeaderLogs,
+  flushHeaderLogs,
+  getHeaderLogSettings,
+  getHeaderRewriteStats,
+  initHeaderLogStore,
+  listHeaderLogs,
+  pushHeaderLogHits,
+  setHeaderLogSettings,
+} from "@/utils/header-log-store";
 
 const log = createLogger("background");
 
@@ -82,17 +93,29 @@ export default defineBackground(() => {
 
   const captureService = new CaptureService();
 
-  // 请求头改写引擎：按能力选择 DNR / webRequest，规则变更即重建
-  void createHeaderEngine()
+  // 请求头改写引擎：按能力选择 DNR / webRequest，规则变更即重建。
+  // 日志上报：先初始化日志仓库（读启用开关/设置缓存），再挂接改写成功回调。
+  void initHeaderLogStore()
+    .then(() =>
+      createHeaderEngine({
+        onRewrite: (hit) => pushHeaderLogHits([hit]),
+      }),
+    )
     .then(async (engine) => {
       headerEngine = engine;
       await engine?.sync();
     })
     .catch((e) => log.warn("请求头引擎初始化失败", e));
 
-  // storage 直改兜底（options/popup 经消息写库时上面分支已 sync；此处覆盖旁路写入）
+  // storage 直改兜底（popup/管理中心直写 headerEnabled 总开关、旁路写 headerRules/headerGroups
+  // 时触发引擎重建）。所有经存储落盘的规则/分组写操作（含消息分支）都由此统一触发重建——
+  // 唯一例外是会话覆盖（仅内存 + storage.session，不落 local，见 HEADERS_SESSION_OVERRIDE 分支）。
   browser.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes["headerRules"]) {
+    if (area !== "local") return;
+    const touched = Object.keys(changes).some((k) =>
+      ["headerRules", "headerGroups", "headerEnabled"].includes(k),
+    );
+    if (touched) {
       void requestSync("storage 变更");
     }
   });
@@ -329,19 +352,17 @@ async function handleRequest(
 
     case "HEADERS_SAVE": {
       const saved = await saveHeaderRule(msg.payload.rule);
-      await requestSync("规则保存");
+      // 引擎重建统一由 storage.onChanged 兜底触发（storage.local 落盘即广播）
       return { ok: true, data: saved };
     }
 
     case "HEADERS_DELETE": {
       await deleteHeaderRule(msg.payload.id);
-      await requestSync("规则删除");
       return { ok: true, data: { deleted: msg.payload.id } };
     }
 
     case "HEADERS_TOGGLE": {
       await toggleHeaderRule(msg.payload.id, msg.payload.enabled);
-      await requestSync("规则切换");
       return {
         ok: true,
         data: { id: msg.payload.id, enabled: msg.payload.enabled },
@@ -350,12 +371,12 @@ async function handleRequest(
 
     case "HEADERS_IMPORT": {
       const all = await importHeaderRules(msg.payload.rules, msg.payload.mode);
-      await requestSync("规则导入");
       return { ok: true, data: all };
     }
 
     case "HEADERS_SESSION_OVERRIDE": {
-      // 会话级覆盖不写持久化；设置后触发引擎重建以即时生效
+      // 会话级覆盖不落 storage.local（仅内存 + storage.session），onChanged 兜底不覆盖，
+      // 故此处显式重建引擎以即时生效
       setSessionOverride(msg.payload.id, msg.payload.enabled);
       await requestSync("会话覆盖变更");
       return {
@@ -377,18 +398,46 @@ async function handleRequest(
 
     case "GROUPS_DELETE": {
       await deleteGroup(msg.payload.id);
-      await requestSync("分组删除");
       return { ok: true, data: { deleted: msg.payload.id } };
     }
 
     case "GROUPS_TOGGLE": {
       await toggleGroup(msg.payload.id, msg.payload.enabled);
-      await requestSync("分组切换");
       return {
         ok: true,
         data: { id: msg.payload.id, enabled: msg.payload.enabled },
       };
     }
+
+    case "GROUPS_SET_RULES": {
+      // 批量「启用成员」的语义是「让组内规则生效」：目标分组若当前停用则先连带开启组开关，
+      // 否则成员 enabled=true 会被组级开关屏蔽（engine 优先级：组开关 > 成员开关），
+      // UI 会显示已启用但实际不生效。引擎重建由 storage.onChanged 兜底统一触发。
+      const { groupId, enabled } = msg.payload;
+      if (enabled && groupId !== "") {
+        const groups = await listGroups();
+        const group = groups.find((g) => g.id === groupId);
+        if (group && !group.enabled) await toggleGroup(groupId, true);
+      }
+      const updated = await toggleRulesByGroup(groupId, enabled);
+      return { ok: true, data: { updated } };
+    }
+
+    case "HEADER_LOG_LIST":
+      // 读前内部先落盘，保证 UI 视图与引擎事件一致
+      return { ok: true, data: await listHeaderLogs(msg.payload.limit) };
+
+    case "HEADER_LOG_CLEAR":
+      return { ok: true, data: { cleared: await clearHeaderLogs() } };
+
+    case "HEADER_LOG_STATS":
+      return { ok: true, data: await getHeaderRewriteStats() };
+
+    case "HEADER_LOG_SETTINGS_GET":
+      return { ok: true, data: await getHeaderLogSettings() };
+
+    case "HEADER_LOG_SETTINGS_SET":
+      return { ok: true, data: await setHeaderLogSettings(msg.payload) };
 
     case "MCP_STATUS":
       return { ok: true, data: await getMcpStatus() };

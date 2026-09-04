@@ -67,6 +67,10 @@ function matchOne(item: UrlMatchItem, url: string): boolean {
   const v = item.value?.trim() ?? "";
   if (!v) return false;
   switch (item.matchType) {
+    case "prefix":
+      return url.startsWith(v);
+    case "suffix":
+      return url.endsWith(v);
     case "contains":
       return url.includes(v);
     case "regex":

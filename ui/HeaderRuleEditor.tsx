@@ -4,9 +4,10 @@
  * - 窄面板友好的动作行布局：目标+操作一行，头名/头值独立成行；
  * - 校验内聚：保存前本地 validateHeaderRule，错误就地展示。
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
+  AutoComplete,
   Button,
   Input,
   Radio,
@@ -31,6 +32,10 @@ import {
   type BodyAction,
   type RuleKind,
 } from "@/types/headers";
+import {
+  COMMON_REQUEST_HEADERS,
+  COMMON_RESPONSE_HEADERS,
+} from "@/utils/header-hints";
 
 const RESOURCE_TYPES: HeaderResourceType[] = [
   "main_frame",
@@ -47,9 +52,22 @@ const RESOURCE_TYPES: HeaderResourceType[] = [
 
 const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 
+/** 规范化 URL 匹配类型：仅接受已支持的枚举值，其余回退 pattern */
+function normalizeMatchType(v: unknown): UrlMatchType {
+  const s = String(v ?? "");
+  return s === "prefix" ||
+    s === "suffix" ||
+    s === "contains" ||
+    s === "regex"
+    ? s
+    : "pattern";
+}
+
 export function HeaderRuleEditor(props: {
   draft: HeaderRule;
   groups: HeaderGroup[];
+  /** 已录入的头部名（从存量规则收集），与内置候选合并后提供自动完成 */
+  learnedNames?: string[];
   onChange: (rule: HeaderRule) => void;
   onSave: () => Promise<void> | void;
   onCancel: () => void;
@@ -61,6 +79,21 @@ export function HeaderRuleEditor(props: {
   const hasRegexMatch = (draft.condition.matches ?? []).some(
     (m) => (m.matchType ?? "pattern") === "regex",
   );
+  // 自动完成候选：内置（按方向）+ 已录入名，大小写不敏感去重（内置优先）
+  const hintOptions = useMemo(() => {
+    const build = (builtin: readonly string[]): string[] => {
+      const seen = new Map<string, string>();
+      for (const name of [...builtin, ...(props.learnedNames ?? [])]) {
+        const key = name.toLowerCase();
+        if (!seen.has(key)) seen.set(key, name);
+      }
+      return [...seen.values()];
+    };
+    return {
+      request: build(COMMON_REQUEST_HEADERS),
+      response: build(COMMON_RESPONSE_HEADERS),
+    };
+  }, [props.learnedNames]);
 
   function patch(p: Partial<HeaderRule>): void {
     onChange({ ...draft, ...p });
@@ -193,16 +226,13 @@ export function HeaderRuleEditor(props: {
                   value={t}
                   options={[
                     { value: "pattern", label: "模式匹配" },
+                    { value: "prefix", label: "前缀匹配" },
+                    { value: "suffix", label: "后缀匹配" },
                     { value: "contains", label: "包含" },
                     { value: "regex", label: "正则" },
                   ]}
                   onChange={(v) =>
-                    patchMatch(i, {
-                      matchType:
-                        v === "contains" || v === "regex"
-                          ? v
-                          : ("pattern" as UrlMatchType),
-                    })
+                    patchMatch(i, { matchType: normalizeMatchType(v) })
                   }
                 />
                 <Button
@@ -226,9 +256,13 @@ export function HeaderRuleEditor(props: {
                 placeholder={
                   t === "pattern"
                     ? "*://api.example.com/*"
-                    : t === "contains"
-                      ? "如 /api/v2/"
-                      : "如 ^https://api\\.example\\.com/v[0-9]+/"
+                    : t === "prefix"
+                      ? "如 https://api.example.com/（URL 开头）"
+                      : t === "suffix"
+                        ? "如 /api/v1（URL 结尾）"
+                        : t === "contains"
+                          ? "如 /api/v2/"
+                          : "如 ^https://api\\.example\\.com/v[0-9]+/"
                 }
                 value={m.value}
                 onChange={(v) => patchMatch(i, { value: String(v ?? "") })}
@@ -426,10 +460,16 @@ export function HeaderRuleEditor(props: {
                   <CloseIcon />
                 </Button>
               </div>
-              <Input
+              <AutoComplete
                 size="small"
-                placeholder="头部名（如 X-Token）"
+                clearable
+                placeholder="头部名（如 X-Token，内置常用候选）"
                 value={action.name}
+                options={
+                  action.target === "response"
+                    ? hintOptions.response
+                    : hintOptions.request
+                }
                 onChange={(v) => patchAction(i, { name: String(v ?? "") })}
               />
               {action.op !== "remove" && (

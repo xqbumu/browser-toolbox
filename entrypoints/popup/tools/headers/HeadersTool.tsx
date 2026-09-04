@@ -5,7 +5,7 @@
  * - 导入/导出仍留在 options 管理页，popup 底部提供跳转。
  */
 import { useEffect, useState } from "react";
-import { Button, MessagePlugin, Switch, Tag } from "tdesign-react";
+import { Button, MessagePlugin, Switch } from "tdesign-react";
 import type { HeaderGroup, HeaderRule } from "@/types/headers";
 import {
   describeActions,
@@ -23,6 +23,22 @@ import {
 } from "@/utils/header-rules-store";
 import { genId } from "@/utils/helpers";
 import { HeaderRuleEditor } from "@/ui/HeaderRuleEditor";
+import { collectLearnedHeaderNames } from "@/utils/header-hints";
+
+/** 规则所属分组是否停用（未分组恒视为启用）。组开关最高优先级：组停用时成员/会话覆盖均不生效 */
+function isGroupOff(rule: HeaderRule, groups: HeaderGroup[]): boolean {
+  return (
+    rule.groupId != null &&
+    !groups.find((g) => g.id === rule.groupId)?.enabled
+  );
+}
+
+function warnGroupOff(): void {
+  void MessagePlugin.warning({
+    content: "分组已停用，组内规则暂不生效——请先开启分组",
+    duration: 2500,
+  });
+}
 
 async function request<T>(msg: PopupRequest): Promise<T> {
   const res = (await browser.runtime.sendMessage(msg)) as PopupResponse<T>;
@@ -83,8 +99,14 @@ export function HeadersTool(): React.ReactNode {
   // 会话级临时覆盖（仅当前会话，重启即清）：本地记录覆盖值，并通知后台引擎即时生效
   const [sessionOv, setSessionOv] = useState<Record<string, boolean>>({});
   async function toggleSession(id: string): Promise<void> {
+    const rule = rules.find((r) => r.id === id);
     const has = id in sessionOv;
-    const nextOv = has ? null : !rules.find((r) => r.id === id)?.enabled;
+    const nextOv = has ? null : !rule?.enabled;
+    // 「强制启用」方向受组开关约束：组停用时先提示开启分组
+    if (rule && nextOv === true && isGroupOff(rule, groups)) {
+      warnGroupOff();
+      return;
+    }
     const prev = sessionOv;
     setSessionOv((m) => {
       const copy = { ...m };
@@ -108,6 +130,12 @@ export function HeadersTool(): React.ReactNode {
   }
 
   async function toggle(id: string, enabled: boolean): Promise<void> {
+    // 组停用 = 整组暂停：仅拦截「启用」方向，避免「显示已启用但引擎不生效」
+    const rule = rules.find((r) => r.id === id);
+    if (rule && enabled && isGroupOff(rule, groups)) {
+      warnGroupOff();
+      return;
+    }
     const prev = rules;
     // 乐观更新，失败回滚
     setRules((rs) => rs.map((r) => (r.id === id ? { ...r, enabled } : r)));
@@ -176,6 +204,7 @@ export function HeadersTool(): React.ReactNode {
         <HeaderRuleEditor
           draft={editing}
           groups={groups}
+          learnedNames={collectLearnedHeaderNames(rules)}
           onChange={setEditing}
           onSave={save}
           onCancel={() => {
@@ -278,6 +307,20 @@ export function HeadersTool(): React.ReactNode {
         </>
       )}
 
+      <div className="headers-more">
+        <button
+          type="button"
+          className="link"
+          onClick={() =>
+            void browser.tabs.create({
+              url: browser.runtime.getURL("/header-manager.html"),
+            })
+          }
+        >
+          打开请求头管理中心（分组 · 日志 · 统计）
+        </button>
+      </div>
+
       <ConfirmDialog
         open={deleting != null}
         header="删除规则"
@@ -307,9 +350,11 @@ function RuleRow(props: {
   onSessionToggle: () => void;
 }): React.ReactNode {
   const { rule } = props;
-  const groupName = rule.groupId
-    ? props.groups.find((g) => g.id === rule.groupId)?.name
+  const group = rule.groupId
+    ? props.groups.find((g) => g.id === rule.groupId)
     : undefined;
+  const groupName = group?.name;
+  const groupOff = rule.groupId != null && !group?.enabled;
   const regexLimited =
     props.dnrLimited &&
     ((rule.condition.excludeRegex ?? []).some((p) => p.trim()) ||
@@ -317,7 +362,7 @@ function RuleRow(props: {
   const effective =
     props.sessionOverride === null ? rule.enabled : props.sessionOverride;
   return (
-    <div className={`rule-row${effective ? "" : " disabled"}`}>
+    <div className={`rule-row${effective ? "" : " disabled"}${groupOff ? " group-off" : ""}`}>
       <label className="switch">
         <input
           type="checkbox"
@@ -335,6 +380,7 @@ function RuleRow(props: {
           {props.badge && <span className="badge">当前页</span>}
           {groupName && <span className="badge group">{groupName}</span>}
           {regexLimited && <span className="badge warn">仅Firefox</span>}
+          {groupOff && <span className="badge warn">组已停用</span>}
           {props.sessionOverride !== null && (
             <span className="badge session">临时</span>
           )}

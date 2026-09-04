@@ -851,6 +851,28 @@ ul.error-list li::marker {
   width: 84px;
 }
 
+/* 徽标（基础）：popup / options / header-manager 共用 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  border-radius: 999px;
+  padding: 0 7px;
+  margin-right: 4px;
+  vertical-align: 1px;
+  border: 1px solid transparent;
+}
+
+/* 规则所属分组停用：整行弱化提示（组开关最高优先级，行开关/会话覆盖不生效） */
+.rule-row.group-off {
+  opacity: 0.75;
+}
+
 /* 规则所属分组徽标 */
 .badge.group {
   background: var(--td-brand-color-light);
@@ -1065,4 +1087,32 @@ ul.error-list li::marker {
   cursor: pointer;
   font-size: 12px;
   padding: 0;
+}
+
+/* ---- 头部名自动完成（编辑器动作行内） ---- */
+.action-row .t-auto-complete {
+  width: 100%;
+}
+.action-row .t-auto-complete .t-input__inner {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* popup 请求头工具底部：打开完整管理中心 */
+.headers-more {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+}
+.headers-more .link {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--td-brand-color, #0052d9);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.headers-more .link:hover {
+  background: var(--td-brand-color-light, #ecf2fe);
 }

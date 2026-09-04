@@ -1,7 +1,11 @@
 /**
  * 请求头规则仓库：browser.storage.local 单键 JSON（规则量小、便于整包导入导出）。
- * 每次写操作后广播 __HEADER_RULES_CHANGED__，background 收到即重建引擎
- * （DNR 动态规则 / MV2 webRequest 缓存）；storage.onChanged 作为兜底监听。
+ * 引擎重建由 background 的 storage.onChanged 兜底统一触发（headerRules / headerGroups /
+ * headerEnabled 三键落盘即重建；消息写库与旁路直写同源，无重复触发）。
+ * 例外：会话覆盖不落 local（内存 + storage.session），由 background 在
+ * HEADERS_SESSION_OVERRIDE 消息分支内显式 requestSync。
+ * 跨端广播（__HEADER_RULES_CHANGED__ / __HEADER_GROUPS_CHANGED__）：供多窗口 UI
+ * 自行同步展示，background 不消费（避免重复重建）。
  */
 import type { HeaderRule, HeaderGroup } from "@/types/headers";
 import { createLogger } from "@/utils/logger";
@@ -170,4 +174,31 @@ export async function toggleGroup(id: string, enabled: boolean): Promise<void> {
   if (!group) return;
   group.enabled = enabled;
   await writeGroups(groups);
+}
+
+/**
+ * 按组批量启停成员规则（组开关本身不动，仅翻转成员 rule.enabled）。
+ * groupId 传空串表示「未分组」（groupId 缺省/undefined 的规则）。
+ * 返回实际变更的规则条数；无成员变更时不写库。
+ */
+export async function toggleRulesByGroup(
+  groupId: string,
+  enabled: boolean,
+): Promise<number> {
+  const rules = await readAll();
+  const now = Date.now();
+  let changed = 0;
+  for (const rule of rules) {
+    const inGroup =
+      groupId === ""
+        ? rule.groupId == null
+        : rule.groupId === groupId;
+    if (inGroup && rule.enabled !== enabled) {
+      rule.enabled = enabled;
+      rule.updatedAt = now;
+      changed += 1;
+    }
+  }
+  if (changed > 0) await writeAll(rules);
+  return changed;
 }

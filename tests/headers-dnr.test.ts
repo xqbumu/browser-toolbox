@@ -91,7 +91,7 @@ describe("toDnrRules", () => {
     expect(out.map((r) => r.id)).toEqual([DNR_START_ID, DNR_START_ID + 1]);
   });
 
-  it("contains 转义为 regexFilter；regex 原样透传", () => {
+  it("contains 转义为 regexFilter；regex 自动加 (?i) 对齐 MV2 大小写不敏感", () => {
     const out = toDnrRules([
       rule({
         condition: {
@@ -112,6 +112,64 @@ describe("toDnrRules", () => {
           r.action.requestHeaders?.[0]?.header === "A",
       ),
     ).toBe(true);
+    // 用户 regex 被前缀 (?i)（RE2 与 MV2 new RegExp(v,"i") 语义一致）
+    expect(out.map((r) => r.condition.regexFilter)).toContain(
+      "(?i)^https://a\\.com/v[0-9]+/",
+    );
+  });
+
+  it("regex 大小写对齐：前缀 (?i)；自带 (?…) 旗标原样；prefix/suffix/contains 不额外加", () => {
+    const out = toDnrRules([
+      rule({
+        condition: {
+          matches: [
+            { matchType: "regex", value: "^https://a\\.com/User" },
+            { matchType: "regex", value: "(?i)^https://b\\.com/" },
+            { matchType: "regex", value: "(?m)^https://c\\.com/" },
+            { matchType: "prefix", value: "https://d.com" },
+            { matchType: "contains", value: "/api" },
+          ],
+        },
+        actions: [{ ...setA }],
+      }),
+    ]);
+    const filters = out
+      .map((r) => r.condition.regexFilter)
+      .filter((f): f is string => f != null);
+    expect(filters).toContain("(?i)^https://a\\.com/User");
+    expect(filters).toContain("(?i)^https://b\\.com/");
+    expect(filters).toContain("(?m)^https://c\\.com/");
+    expect(filters).toContain("^https://d\\.com"); // prefix：字面匹配不加 (?i)
+    expect(filters).toContain("/api"); // contains：字面子串不加 (?i)
+  });
+
+  it("prefix/suffix 转义并加锚点后走 regexFilter", () => {
+    const out = toDnrRules([
+      rule({
+        condition: {
+          matches: [
+            { matchType: "prefix", value: "https://api.example.com/" },
+            { matchType: "suffix", value: "/api/v1" },
+          ],
+        },
+        actions: [{ ...setA }],
+      }),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((r) => r.condition.regexFilter)).toEqual([
+      "^https://api\\.example\\.com/",
+      "/api/v1$",
+    ]);
+    // 正则元字符整体转义：suffix 含 . 不当作通配
+    const dot = toDnrRules([
+      rule({
+        condition: {
+          matches: [{ matchType: "suffix", value: "v1.js" }],
+        },
+        actions: [{ ...setA }],
+      }),
+    ]);
+    expect(dot[0]!.condition.regexFilter).toBe("v1\\.js$");
   });
 
   it("方法转小写、资源类型透传", () => {
@@ -221,7 +279,7 @@ describe("toDnrRules 重定向", () => {
       }),
     ]);
     expect(out).toHaveLength(1);
-    expect(out[0]!.condition.regexFilter).toBe("^https://a\\.com/(.*)");
+    expect(out[0]!.condition.regexFilter).toBe("(?i)^https://a\\.com/(.*)");
     expect(out[0]!.action.type).toBe("redirect");
     if (out[0]!.action.type === "redirect") {
       expect(out[0]!.action.redirect.regexSubstitution).toBe(

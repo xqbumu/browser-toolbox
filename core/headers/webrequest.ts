@@ -20,8 +20,63 @@ export interface HttpHeader {
   value?: string;
 }
 
+/** 命中结果：命中的规则 + 该方向应应用的动作（供引擎逐规则上报改写事件） */
+export interface RuleTargetHit {
+  rule: HeaderRule;
+  actions: HeaderAction[];
+}
+
+/** 命中谓词（不含 enabled 过滤，由调用方保证） */
+function ruleMatchesTarget(
+  rule: HeaderRule,
+  url: string,
+  target: HeaderAction["target"],
+  method?: string,
+  resourceType?: HeaderResourceType,
+): HeaderAction[] {
+  if (!conditionMatchesUrl(rule.condition, url)) return [];
+  if (isDomainExcluded(rule.condition, url)) return [];
+  if (isMethodOrTypeExcluded(rule.condition, method, resourceType)) return [];
+  if (isUrlRegexExcluded(rule.condition, url)) return [];
+
+  const methods = rule.condition.methods;
+  if (methods?.length) {
+    if (!method || !methods.includes(method.toUpperCase())) return [];
+  }
+
+  const types = rule.condition.resourceTypes;
+  if (types?.length) {
+    if (resourceType == null || !types.includes(resourceType)) return [];
+  }
+
+  return rule.actions.filter((a) => a.target === target);
+}
+
 /**
- * 收集命中请求的动作。
+ * 收集命中请求的目标动作（带规则归属）。
+ * 与 DNR 路径对齐采用严格语义：
+ * - 方法受限但调用方未传 method → 不应用；
+ * - 资源类型受限但类型未知/不匹配 → 不应用（宁可漏改不可错改）。
+ */
+export function collectRuleHits(
+  rules: HeaderRule[],
+  url: string,
+  target: HeaderAction["target"],
+  method?: string,
+  resourceType?: HeaderResourceType,
+): RuleTargetHit[] {
+  const out: RuleTargetHit[] = [];
+  for (const rule of rules) {
+    // 注意：enabled 过滤已在 listEffectiveRules 完成（含会话覆盖），此处不再判断，
+    // 否则会被二次过滤而丢弃「会话临时启用」的禁用规则。
+    const actions = ruleMatchesTarget(rule, url, target, method, resourceType);
+    if (actions.length > 0) out.push({ rule, actions });
+  }
+  return out;
+}
+
+/**
+ * 收集命中请求的动作（扁平，行为与历史版本一致）。
  * 与 DNR 路径对齐采用严格语义：
  * - 方法受限但调用方未传 method → 不应用；
  * - 资源类型受限但类型未知/不匹配 → 不应用（宁可漏改不可错改）。
@@ -33,28 +88,9 @@ export function pickActions(
   method?: string,
   resourceType?: HeaderResourceType,
 ): HeaderAction[] {
-  const out: HeaderAction[] = [];
-  for (const rule of rules) {
-    // 注意：enabled 过滤已在 listEffectiveRules 完成（含会话覆盖），此处不再判断，
-    // 否则会被 pickActions 二次过滤而丢弃「会话临时启用」的禁用规则。
-    if (!conditionMatchesUrl(rule.condition, url)) continue;
-    if (isDomainExcluded(rule.condition, url)) continue;
-    if (isMethodOrTypeExcluded(rule.condition, method, resourceType)) continue;
-    if (isUrlRegexExcluded(rule.condition, url)) continue;
-
-    const methods = rule.condition.methods;
-    if (methods?.length) {
-      if (!method || !methods.includes(method.toUpperCase())) continue;
-    }
-
-    const types = rule.condition.resourceTypes;
-    if (types?.length) {
-      if (resourceType == null || !types.includes(resourceType)) continue;
-    }
-
-    out.push(...rule.actions.filter((a) => a.target === target));
-  }
-  return out;
+  return collectRuleHits(rules, url, target, method, resourceType).flatMap(
+    (h) => h.actions,
+  );
 }
 
 /** 应用一组头部动作到头数组（原地语义的纯实现，返回新数组） */

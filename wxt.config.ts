@@ -78,10 +78,12 @@ export default defineConfig({
             "privacy",
           ] as const)
         : []),
-      // Chrome/Safari MV3：declarativeNetRequest modifyHeaders
-      ...(browser === "chrome" || browser === "safari"
-        ? (["declarativeNetRequest"] as const)
+      // Chrome/Safari MV3：declarativeNetRequest modifyHeaders。
+      // Chrome 额外申请 webRequest（仅只读观测，用于改写成功日志/统计；不注册阻塞监听）。
+      ...(browser === "chrome"
+        ? (["declarativeNetRequest", "webRequest"] as const)
         : []),
+      ...(browser === "safari" ? (["declarativeNetRequest"] as const) : []),
     ],
     host_permissions: ["<all_urls>"],
     browser_specific_settings: {
