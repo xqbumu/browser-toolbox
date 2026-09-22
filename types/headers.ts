@@ -36,6 +36,8 @@ export interface HeaderAction {
   name: string;
   /** 头部值；op=remove 时可省略 */
   value?: string;
+  /** 单动作启停；缺省（undefined）视为启用（兼容存量数据） */
+  enabled?: boolean;
 }
 
 /** URL 匹配方式 */
@@ -92,6 +94,8 @@ export interface BodyAction {
   isRegex?: boolean;
   /** 是否区分大小写（isRegex=false 时生效；默认不区分） */
   caseSensitive?: boolean;
+  /** 单动作启停；缺省视为启用（兼容存量数据） */
+  enabled?: boolean;
 }
 
 /** 查询参数动作：add/replace 设置（同名则覆盖），remove 移除 */
@@ -103,6 +107,8 @@ export interface QueryParamAction {
   name: string;
   /** op=remove 时可省略；否则为目标值 */
   value?: string;
+  /** 单动作启停；缺省视为启用（兼容存量数据） */
+  enabled?: boolean;
 }
 
 /** 请求头规则（扁平、可独立启停） */
@@ -139,6 +145,46 @@ export interface HeaderGroup {
 
 /** 未分组规则的隐式组名（groupId === undefined 时显示） */
 export const IMPLICIT_GROUP_LABEL = "未分组";
+
+/** 单动作是否启用（undefined 视为启用，兼容存量数据） */
+export function isActionEnabled(a: { enabled?: boolean }): boolean {
+  return a.enabled !== false;
+}
+
+/** 规则所属分组是否停用（未分组恒视为启用）。组开关是最高优先级：组停用时成员/会话覆盖均不生效 */
+export function isGroupOff(rule: HeaderRule, groups: HeaderGroup[]): boolean {
+  return (
+    rule.groupId != null && !groups.find((g) => g.id === rule.groupId)?.enabled
+  );
+}
+
+/** 复制一条规则：新 id + 名称追加“ 副本” + 时间戳刷新（order 由调用方决定） */
+export function cloneHeaderRule(
+  rule: HeaderRule,
+  nextId: string,
+  now = Date.now(),
+): HeaderRule {
+  const base = (rule.name ?? "").trim() || "未命名规则";
+  const name = base.endsWith(" 副本") ? base : `${base} 副本`;
+  return {
+    ...structuredClone(rule),
+    id: nextId,
+    name,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** 复制一条规则并追加到末尾：order 取现存最大值 +1（管理中心 / popup / options 三端共用） */
+export function makeRuleCopy(
+  existing: HeaderRule[],
+  rule: HeaderRule,
+  nextId: string,
+  now = Date.now(),
+): HeaderRule {
+  const maxOrder = existing.reduce((m, r) => Math.max(m, r.order ?? 0), 0);
+  return { ...cloneHeaderRule(rule, nextId, now), order: maxOrder + 1 };
+}
 
 export function newHeaderGroup(
   name = "新建分组",
@@ -228,6 +274,20 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
       ? rule.kind
       : "headers";
 
+  /**
+   * 遍历已启用的动作（保留原下标，错误编号与编辑器行号一致）。
+   * 停用的动作暂不校验（保留草稿，启用时再要求合法）；动作可全部停用，
+   * 用于整组动作临时停放——引擎侧会跳过停用动作，规则自然不生效。
+   */
+  const eachEnabled = <T extends { enabled?: boolean }>(
+    list: T[],
+    fn: (item: T, index: number) => void,
+  ): void => {
+    list.forEach((item, i) => {
+      if (isActionEnabled(item ?? {})) fn(item, i);
+    });
+  };
+
   if (kind === "headers") {
     if (actions.length === 0) {
       errors.push("至少需要一条头部动作");
@@ -248,7 +308,7 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
     if (qas.length === 0) {
       errors.push("至少需要一条查询参数动作");
     }
-    qas.forEach((q, i) => {
+    eachEnabled(qas, (q, i) => {
       const label = `查询动作 #${i + 1}`;
       if (!q || typeof q !== "object") {
         errors.push(`${label}：不是有效对象`);
@@ -266,7 +326,7 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
     if (bas.length === 0) {
       errors.push("至少需要一条响应体替换动作");
     }
-    bas.forEach((b, i) => {
+    eachEnabled(bas, (b, i) => {
       const label = `响应体动作 #${i + 1}`;
       if (!b || typeof b !== "object") {
         errors.push(`${label}：不是有效对象`);
@@ -286,7 +346,7 @@ export function validateHeaderRule(rule: HeaderRule): string[] {
   }
   // cancel：命中即阻止，无额外字段
 
-  actions.forEach((a, i) => {
+  eachEnabled(actions, (a, i) => {
     if (kind !== "headers") return;
     const label = `动作 #${i + 1}`;
     if (a == null || typeof a !== "object") {
@@ -338,6 +398,10 @@ export function migrateHeaderRule(raw: HeaderRule): HeaderRule {
   };
 
   const matches: UrlMatchItem[] = [];
+  const normMatchType = (t: unknown): UrlMatchItem["matchType"] =>
+    t === "prefix" || t === "suffix" || t === "contains" || t === "regex"
+      ? t
+      : "pattern";
   if (Array.isArray(rawCond.matches)) {
     for (const m of rawCond.matches) {
       if (
@@ -346,9 +410,8 @@ export function migrateHeaderRule(raw: HeaderRule): HeaderRule {
         typeof m.value === "string" &&
         m.value.trim()
       ) {
-        const t = m.matchType;
         matches.push({
-          matchType: t === "contains" || t === "regex" ? t : "pattern",
+          matchType: normMatchType(m.matchType),
           value: m.value.trim(),
         });
       }
@@ -394,7 +457,25 @@ export function migrateHeaderRule(raw: HeaderRule): HeaderRule {
     createdAt: raw.createdAt ?? 0,
     updatedAt: raw.updatedAt ?? 0,
     comment: typeof raw.comment === "string" ? raw.comment : undefined,
-    condition: { matches },
+    condition: {
+      matches,
+      ...(Array.isArray(rawCond.resourceTypes)
+        ? { resourceTypes: rawCond.resourceTypes }
+        : {}),
+      ...(Array.isArray(rawCond.methods) ? { methods: rawCond.methods } : {}),
+      ...(Array.isArray(rawCond.excludeDomains)
+        ? { excludeDomains: rawCond.excludeDomains }
+        : {}),
+      ...(Array.isArray(rawCond.excludeMethods)
+        ? { excludeMethods: rawCond.excludeMethods }
+        : {}),
+      ...(Array.isArray(rawCond.excludeResourceTypes)
+        ? { excludeResourceTypes: rawCond.excludeResourceTypes }
+        : {}),
+      ...(Array.isArray(rawCond.excludeRegex)
+        ? { excludeRegex: rawCond.excludeRegex }
+        : {}),
+    },
     actions: Array.isArray(raw.actions) ? raw.actions : [],
   };
 }
@@ -443,31 +524,47 @@ export function ruleKindLabel(kind: RuleKind | undefined): string {
   }
 }
 
-/** 动作摘要（列表行副文案）：按类型输出 */
+/** 动作摘要（列表行副文案）：按类型输出（仅统计已启用的动作） */
 export function describeActions(rule: HeaderRule): string {
+  const disabledSuffix = (total: number, enabled: number): string =>
+    total > enabled ? `（${total - enabled} 已停用）` : "";
   if (rule.kind === "cancel") return "命中即取消请求";
   if (rule.kind === "redirect") return `→ ${rule.redirectTo ?? "?"}`;
   if (rule.kind === "query") {
     const qas = rule.queryActions ?? [];
-    if (qas.length === 0) return "改写查询（无动作）";
-    const summary = qas
+    const enabled = qas.filter(isActionEnabled);
+    if (enabled.length === 0)
+      return qas.length === 0
+        ? "改写查询（无动作）"
+        : "改写查询（动作已全部停用）";
+    const summary = enabled
       .map((q) =>
         q.op === "remove"
           ? `-${q.name}`
           : `${q.op === "add" ? "+" : "±"}${q.name}`,
       )
       .join(" ");
-    return `查询 ${summary}`;
+    return `查询 ${summary}${disabledSuffix(qas.length, enabled.length)}`;
   }
   if (rule.kind === "body") {
     const bas = rule.bodyActions ?? [];
-    if (bas.length === 0) return "改写响应体（无动作）";
-    return `响应体 ${bas.length} 条替换（仅 Firefox）`;
+    const enabled = bas.filter(isActionEnabled);
+    if (enabled.length === 0)
+      return bas.length === 0
+        ? "改写响应体（无动作）"
+        : "改写响应体（动作已全部停用）";
+    return `响应体 ${enabled.length} 条替换（仅 Firefox）${disabledSuffix(bas.length, enabled.length)}`;
   }
-  const req = rule.actions.filter((a) => a.target === "request").length;
-  const resp = rule.actions.filter((a) => a.target === "response").length;
+  const all = rule.actions ?? [];
+  const enabled = all.filter(isActionEnabled);
+  if (enabled.length === 0)
+    return all.length === 0 ? "无动作" : "动作已全部停用";
+  const req = enabled.filter((a) => a.target === "request").length;
+  const resp = enabled.filter((a) => a.target === "response").length;
   const parts: string[] = [];
   if (req > 0) parts.push(`请求 ×${req}`);
   if (resp > 0) parts.push(`响应 ×${resp}`);
-  return parts.join(" / ") || "无动作";
+  const base = parts.join(" / ") || "无动作";
+  const suffix = disabledSuffix(all.length, enabled.length);
+  return suffix ? `${base}${suffix}` : base;
 }

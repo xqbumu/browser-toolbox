@@ -103,6 +103,7 @@ export type PopupRequest =
   | { type: "HEADERS_LIST"; payload: Record<string, never> } // 返回 HeaderRule[]
   | { type: "HEADERS_SAVE"; payload: { rule: HeaderRule } } // 新增或覆盖保存
   | { type: "HEADERS_DELETE"; payload: { id: string } }
+  | { type: "HEADERS_DELETE_MANY"; payload: { ids: string[] } }
   | { type: "HEADERS_TOGGLE"; payload: { id: string; enabled: boolean } }
   | {
       // 会话级临时覆盖：强制启用/停用某规则（仅当前会话，重启即清）

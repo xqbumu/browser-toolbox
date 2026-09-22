@@ -69,6 +69,17 @@ export async function deleteHeaderRule(id: string): Promise<void> {
   await writeAll(rules.filter((r) => r.id !== id));
 }
 
+/** 批量删除规则：返回实际删除条数；ids 为空时直接返回 0（不写库） */
+export async function deleteHeaderRules(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const targets = new Set(ids);
+  const rules = await readAll();
+  const kept = rules.filter((r) => !targets.has(r.id));
+  const deleted = rules.length - kept.length;
+  if (deleted > 0) await writeAll(kept);
+  return deleted;
+}
+
 export async function toggleHeaderRule(
   id: string,
   enabled: boolean,
@@ -190,9 +201,7 @@ export async function toggleRulesByGroup(
   let changed = 0;
   for (const rule of rules) {
     const inGroup =
-      groupId === ""
-        ? rule.groupId == null
-        : rule.groupId === groupId;
+      groupId === "" ? rule.groupId == null : rule.groupId === groupId;
     if (inGroup && rule.enabled !== enabled) {
       rule.enabled = enabled;
       rule.updatedAt = now;

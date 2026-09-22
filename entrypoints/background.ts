@@ -43,6 +43,7 @@ import {
 import { initMcp, startMcp, stopMcp, getMcpStatus } from "@/core/mcp/manager";
 import {
   deleteHeaderRule,
+  deleteHeaderRules,
   deleteGroup,
   importHeaderRules,
   listHeaderRules,
@@ -359,6 +360,11 @@ async function handleRequest(
     case "HEADERS_DELETE": {
       await deleteHeaderRule(msg.payload.id);
       return { ok: true, data: { deleted: msg.payload.id } };
+    }
+
+    case "HEADERS_DELETE_MANY": {
+      const deleted = await deleteHeaderRules(msg.payload.ids ?? []);
+      return { ok: true, data: { deleted } };
     }
 
     case "HEADERS_TOGGLE": {

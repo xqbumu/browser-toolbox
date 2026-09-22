@@ -10,6 +10,7 @@
  * 输出使用结构化最小类型而非 chrome 命名空间，保证 node 测试环境零依赖。
  */
 import type { HeaderRule } from "@/types/headers";
+import { isActionEnabled } from "@/types/headers";
 import { createLogger } from "@/utils/logger";
 
 const log = createLogger("header-dnr");
@@ -214,7 +215,8 @@ export function toDnrRules(
     // 排序权重 → DNR 优先级（同头冲突时后写者生效，与 MV2 行为一致）
     const priority = 1 + (rule.order ?? 0);
 
-    // headers 按方向拆分；cancel/redirect 与方向无关，仅一条/条件
+    // headers 按方向拆分（仅已启用的动作参与；某方向全停用则不产出该方向规则）；
+    // cancel/redirect 与方向无关，仅一条/条件
     const headerGroups: {
       key: "req" | "resp";
       actions: typeof rule.actions;
@@ -223,11 +225,15 @@ export function toDnrRules(
         ? [
             {
               key: "req",
-              actions: rule.actions.filter((a) => a.target === "request"),
+              actions: rule.actions.filter(
+                (a) => a.target === "request" && isActionEnabled(a),
+              ),
             },
             {
               key: "resp",
-              actions: rule.actions.filter((a) => a.target === "response"),
+              actions: rule.actions.filter(
+                (a) => a.target === "response" && isActionEnabled(a),
+              ),
             },
           ]
         : [];
@@ -243,14 +249,19 @@ export function toDnrRules(
             action: { type: "block" },
           });
         } else if (kind === "query") {
-          // 查询参数改写：DNR 用 redirect.transform.queryTransform
-          const addOrReplaceParams = (rule.queryActions ?? [])
+          // 查询参数改写：DNR 用 redirect.transform.queryTransform（仅已启用动作）；
+          // 启用动作全空时跳过（不下发空 transform 的无意义规则）
+          const enabledQuery = (rule.queryActions ?? []).filter(
+            isActionEnabled,
+          );
+          if (enabledQuery.length === 0) continue;
+          const addOrReplaceParams = enabledQuery
             .filter((q) => q.op !== "remove" && (q.value ?? "").trim())
             .map((q) => ({
               key: q.name.trim(),
               value: (q.value ?? "").trim(),
             }));
-          const removeParams = (rule.queryActions ?? [])
+          const removeParams = enabledQuery
             .filter((q) => q.op === "remove")
             .map((q) => q.name.trim());
           const transform: {

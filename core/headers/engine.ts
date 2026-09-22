@@ -6,6 +6,7 @@
  * sync() 幂等：DNR 先清理本引擎 id 区间再写入；webRequest 直接替换内存缓存。
  */
 import type { HeaderResourceType, HeaderRule } from "@/types/headers";
+import { isActionEnabled } from "@/types/headers";
 import type { HeaderRewriteHit } from "@/types/header-log";
 import { DNR_START_ID, toDnrRules } from "./dnr";
 import {
@@ -391,7 +392,9 @@ export async function createHeaderEngine(
         !isMethodOrTypeExcluded(r.condition, details.method, resourceType) &&
         !isUrlRegexExcluded(r.condition, details.url),
     );
-    const actions = matched.flatMap((r) => r.bodyActions ?? []);
+    const actions = matched
+      .flatMap((r) => r.bodyActions ?? [])
+      .filter(isActionEnabled);
     if (actions.length === 0) return;
     const frApi = (
       browser.webRequest as unknown as {
@@ -409,7 +412,8 @@ export async function createHeaderEngine(
   // cancel / redirect / query 规则在 onBeforeRequest 阶段处理
   let cancelRules: HeaderRule[] = [];
   let redirectRules: HeaderRule[] = [];
-  let queryRules: HeaderRule[] = [];  function resolveBeforeRequest(
+  let queryRules: HeaderRule[] = [];
+  function resolveBeforeRequest(
     url: string,
     method?: string,
     resourceType?: HeaderResourceType,
@@ -455,7 +459,7 @@ export async function createHeaderEngine(
       if (isDomainExcluded(rule.condition, url)) continue;
       if (isMethodOrTypeExcluded(rule.condition, method, resourceType))
         continue;
-      const actions = rule.queryActions ?? [];
+      const actions = (rule.queryActions ?? []).filter(isActionEnabled);
       if (actions.length === 0) continue;
       const newUrl = applyQueryTransform(url, actions);
       if (newUrl !== url) return { redirectUrl: newUrl };

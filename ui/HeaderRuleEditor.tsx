@@ -13,12 +13,14 @@ import {
   Radio,
   RadioGroup,
   Select,
+  Switch,
   Textarea,
 } from "tdesign-react";
 import { CloseIcon, PlusIcon } from "tdesign-icons-react";
 import {
   validateHeaderRule,
   IMPLICIT_GROUP_LABEL,
+  isActionEnabled,
   type HeaderAction,
   type HeaderGroup,
   type UrlMatchItem,
@@ -55,10 +57,7 @@ const METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 /** 规范化 URL 匹配类型：仅接受已支持的枚举值，其余回退 pattern */
 function normalizeMatchType(v: unknown): UrlMatchType {
   const s = String(v ?? "");
-  return s === "prefix" ||
-    s === "suffix" ||
-    s === "contains" ||
-    s === "regex"
+  return s === "prefix" || s === "suffix" || s === "contains" || s === "regex"
     ? s
     : "pattern";
 }
@@ -172,14 +171,22 @@ export function HeaderRuleEditor(props: {
           value={draft.groupId ?? ""}
           onChange={(v) => patch({ groupId: v === "" ? undefined : String(v) })}
           options={[
-            { label: IMPLICIT_GROUP_LABEL, value: "" },
+            { label: `○ ${IMPLICIT_GROUP_LABEL}`, value: "" },
             ...props.groups.map((g) => ({
-              label: g.name + (g.enabled ? "" : "（已停用）"),
+              label: g.enabled ? `● ${g.name}` : `○ ${g.name}（已停用）`,
               value: g.id,
             })),
           ]}
+          placeholder="选择分组"
+          filterable={props.groups.length > 5}
           size="small"
         />
+        {draft.groupId != null &&
+          !props.groups.find((g) => g.id === draft.groupId)?.enabled && (
+            <span className="hint">
+              该分组已停用，组内规则暂不生效——可在管理中心开启分组
+            </span>
+          )}
       </div>
 
       <div className="field">
@@ -413,8 +420,25 @@ export function HeaderRuleEditor(props: {
         <div className="field">
           <span className="field-label">头部动作</span>
           {draft.actions.map((action, i) => (
-            <div key={i} className="action-row">
+            <div
+              key={i}
+              className={`action-row${isActionEnabled(action) ? "" : " action-off"}`}
+            >
               <div className="action-line">
+                <span
+                  className="action-enable"
+                  title={isActionEnabled(action) ? "停用该动作" : "启用该动作"}
+                >
+                  <Switch
+                    size="small"
+                    value={isActionEnabled(action)}
+                    onChange={(v) =>
+                      patchAction(i, {
+                        enabled: Boolean(v) ? undefined : false,
+                      })
+                    }
+                  />
+                </span>
                 <Select
                   size="small"
                   className="sel-target"
@@ -525,8 +549,25 @@ export function HeaderRuleEditor(props: {
         <div className="field">
           <span className="field-label">查询参数动作</span>
           {(draft.queryActions ?? []).map((q, i) => (
-            <div key={i} className="action-row">
+            <div
+              key={i}
+              className={`action-row${isActionEnabled(q) ? "" : " action-off"}`}
+            >
               <div className="action-line">
+                <span
+                  className="action-enable"
+                  title={isActionEnabled(q) ? "停用该动作" : "启用该动作"}
+                >
+                  <Switch
+                    size="small"
+                    value={isActionEnabled(q)}
+                    onChange={(v) =>
+                      patchQueryAction(i, {
+                        enabled: Boolean(v) ? undefined : false,
+                      })
+                    }
+                  />
+                </span>
                 <Select
                   size="small"
                   className="sel-qop"
@@ -608,8 +649,25 @@ export function HeaderRuleEditor(props: {
             message="每条动作按「查找 → 替换」改写响应体文本。正则模式用 JS 正则语法；仅对 HTML/JSON/JS/CSS 等文本响应生效（Chrome/Safari 不支持，规则不生效）。"
           />
           {(draft.bodyActions ?? []).map((b, i) => (
-            <div key={i} className="action-row body-action">
+            <div
+              key={i}
+              className={`action-row body-action${isActionEnabled(b) ? "" : " action-off"}`}
+            >
               <div className="action-line">
+                <span
+                  className="action-enable"
+                  title={isActionEnabled(b) ? "停用该动作" : "启用该动作"}
+                >
+                  <Switch
+                    size="small"
+                    value={isActionEnabled(b)}
+                    onChange={(v) =>
+                      patchBodyAction(i, {
+                        enabled: Boolean(v) ? undefined : false,
+                      })
+                    }
+                  />
+                </span>
                 <Button
                   size="small"
                   variant="text"

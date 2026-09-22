@@ -8,6 +8,7 @@ import type {
   HeaderResourceType,
   HeaderRule,
 } from "@/types/headers";
+import { isActionEnabled } from "@/types/headers";
 import {
   conditionMatchesUrl,
   isDomainExcluded,
@@ -49,7 +50,7 @@ function ruleMatchesTarget(
     if (resourceType == null || !types.includes(resourceType)) return [];
   }
 
-  return rule.actions.filter((a) => a.target === target);
+  return rule.actions.filter((a) => a.target === target && isActionEnabled(a));
 }
 
 /**
@@ -93,13 +94,14 @@ export function pickActions(
   );
 }
 
-/** 应用一组头部动作到头数组（原地语义的纯实现，返回新数组） */
+/** 应用一组头部动作到头数组（原地语义的纯实现，返回新数组；跳过已停用动作） */
 export function applyHeaderActions(
   headers: HttpHeader[],
   actions: HeaderAction[],
 ): HttpHeader[] {
   let result = [...headers];
   for (const action of actions) {
+    if (!isActionEnabled(action)) continue;
     const name = action.name.trim();
     if (!name) continue;
     switch (action.op) {
@@ -132,7 +134,12 @@ export function applyHeaderActions(
  */
 export function applyQueryTransform(
   url: string,
-  actions: { op: "add" | "replace" | "remove"; name: string; value?: string }[],
+  actions: {
+    op: "add" | "replace" | "remove";
+    name: string;
+    value?: string;
+    enabled?: boolean;
+  }[],
 ): string {
   let parsed: URL;
   try {
@@ -142,6 +149,7 @@ export function applyQueryTransform(
   }
   let changed = false;
   for (const a of actions) {
+    if (!isActionEnabled(a)) continue;
     const key = a.name.trim();
     if (!key) continue;
     if (a.op === "remove") {

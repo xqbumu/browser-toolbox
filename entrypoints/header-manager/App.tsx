@@ -7,11 +7,21 @@
  * 写操作统一走 background 消息（引擎即时重建）；总开关直写 storage（后台兜底监听）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Input, MessagePlugin, Switch, Tabs } from "tdesign-react";
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Input,
+  MessagePlugin,
+  Switch,
+  Tabs,
+} from "tdesign-react";
 import { FilterIcon } from "tdesign-icons-react";
 import {
   describeActions,
   describeCondition,
+  isGroupOff,
+  makeRuleCopy,
   newHeaderGroup,
   newHeaderRule,
   type HeaderGroup,
@@ -40,23 +50,13 @@ async function request<T>(msg: PopupRequest): Promise<T> {
 
 /** 列表选区：全部 / 未分组 / 指定分组 */
 type Segment =
-  | { kind: "all" }
-  | { kind: "none" }
-  | { kind: "group"; id: string };
+  { kind: "all" } | { kind: "none" } | { kind: "group"; id: string };
 
 const segmentLabel = (seg: Segment, groups: HeaderGroup[]): string => {
   if (seg.kind === "all") return "全部规则";
   if (seg.kind === "none") return "未分组";
   return groups.find((g) => g.id === seg.id)?.name ?? "分组";
 };
-
-/** 规则所属分组是否停用（未分组恒视为启用）。组开关是最高优先级：组停用时成员/会话覆盖均不生效 */
-function isGroupOff(rule: HeaderRule, groups: HeaderGroup[]): boolean {
-  return (
-    rule.groupId != null &&
-    !groups.find((g) => g.id === rule.groupId)?.enabled
-  );
-}
 
 export default function App(): React.ReactNode {
   const [rules, setRules] = useState<HeaderRule[]>([]);
@@ -69,10 +69,13 @@ export default function App(): React.ReactNode {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<HeaderRule | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(
-    null,
-  );
+  const [renaming, setRenaming] = useState<{
+    id: string;
+    value: string;
+  } | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   // 重命名 Esc 取消防护：Esc 卸载输入框时若浏览器补发 blur，会误触发 onBlur 提交；
   // 置位后由 onBlur 消费并复位；新一轮重命名打开时再次复位，避免误吞后续点击失焦提交。
@@ -85,9 +88,11 @@ export default function App(): React.ReactNode {
   const logCapable = useMemo(() => {
     if (engineKind === "webrequest") return true;
     if (engineKind !== "dnr") return false;
-    const wr = (browser as unknown as {
-      webRequest?: { onBeforeSendHeaders?: { addListener?: unknown } };
-    }).webRequest;
+    const wr = (
+      browser as unknown as {
+        webRequest?: { onBeforeSendHeaders?: { addListener?: unknown } };
+      }
+    ).webRequest;
     return typeof wr?.onBeforeSendHeaders?.addListener === "function";
   }, [engineKind]);
 
@@ -136,14 +141,25 @@ export default function App(): React.ReactNode {
       area: string,
     ): void => {
       if (area !== "local") return;
-      if (["headerRules", "headerGroups", "headerEnabled"].some((k) => changes[k])) {
+      if (
+        ["headerRules", "headerGroups", "headerEnabled"].some((k) => changes[k])
+      ) {
         void reloadAll();
-        void isHeaderMasterEnabled().then(setMasterOn).catch(() => {});
+        void isHeaderMasterEnabled()
+          .then(setMasterOn)
+          .catch(() => {});
       }
     };
     browser.storage.onChanged.addListener(listener);
     return () => browser.storage.onChanged.removeListener(listener);
   }, []);
+
+  // 选择作用域限定当前筛选视图：切换分组/修改搜索时清空已选，
+  // 保证批量删除只删用户当前所见的已选规则，不误删视图外规则
+  const segKey = seg.kind === "group" ? `group:${seg.id}` : seg.kind;
+  useEffect(() => {
+    setSelected(new Set());
+  }, [segKey, query]);
 
   function flash(text: string): void {
     void MessagePlugin.success({ content: text, duration: 2000 });
@@ -217,8 +233,14 @@ export default function App(): React.ReactNode {
     const ao = a.order ?? 0;
     const bo = b.order ?? 0;
     try {
-      await request({ type: "HEADERS_SAVE", payload: { rule: { ...a, order: bo } } });
-      await request({ type: "HEADERS_SAVE", payload: { rule: { ...b, order: ao } } });
+      await request({
+        type: "HEADERS_SAVE",
+        payload: { rule: { ...a, order: bo } },
+      });
+      await request({
+        type: "HEADERS_SAVE",
+        payload: { rule: { ...b, order: ao } },
+      });
       await reload();
     } catch (e) {
       void MessagePlugin.error({
@@ -231,7 +253,52 @@ export default function App(): React.ReactNode {
   async function removeRule(id: string): Promise<void> {
     await request({ type: "HEADERS_DELETE", payload: { id } }).catch(() => {});
     setDeleteId(null);
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     await reload();
+  }
+
+  /** 复制规则：新 id + “ 副本”后缀 + 追加到末尾，保存即生效 */
+  async function duplicateRule(rule: HeaderRule): Promise<void> {
+    try {
+      const copy = makeRuleCopy(rules, rule, genId());
+      await request({ type: "HEADERS_SAVE", payload: { rule: copy } });
+      await reload();
+      flash(`已复制「${copy.name}」`);
+    } catch (e) {
+      void MessagePlugin.error({
+        content: e instanceof Error ? e.message : String(e),
+        duration: 3000,
+      });
+    }
+  }
+
+  /** 批量删除已选规则 */
+  async function removeSelected(): Promise<void> {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    try {
+      await request({ type: "HEADERS_DELETE_MANY", payload: { ids } });
+      flash(`已删除 ${ids.length} 条规则`);
+    } catch {
+      // 部分失败也刷新，以实际存储为准
+    }
+    setBulkDeleting(false);
+    setSelected(new Set());
+    await reload();
+  }
+
+  function toggleSelect(id: string): void {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function save(): Promise<void> {
@@ -350,7 +417,9 @@ export default function App(): React.ReactNode {
       <header className="page-head">
         <h1>
           请求头管理中心
-          {rules.length > 0 && <span className="count-tag">{rules.length} 条规则</span>}
+          {rules.length > 0 && (
+            <span className="count-tag">{rules.length} 条规则</span>
+          )}
           {engineKind && <span className="hm-engine-tag">{engineKind}</span>}
         </h1>
         <div className="page-actions">
@@ -414,18 +483,52 @@ export default function App(): React.ReactNode {
                     return (
                       <div
                         key={g.id}
+                        role="button"
+                        tabIndex={renamingThis ? -1 : 0}
+                        aria-current={active}
+                        aria-label={`查看分组 ${g.name}`}
+                        title={
+                          g.enabled
+                            ? g.name
+                            : `${g.name}（已停用，组内规则不生效）`
+                        }
                         className={`hm-seg hm-seg-group${active ? " active" : ""}${g.enabled ? "" : " off"}`}
+                        onClick={() => {
+                          if (!renamingThis)
+                            setSeg({ kind: "group", id: g.id });
+                        }}
+                        onKeyDown={(e) => {
+                          // 内层控件（开关/输入框/按钮）自带键盘行为，只处理行本体上的按键
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            if (!renamingThis)
+                              setSeg({ kind: "group", id: g.id });
+                          }
+                        }}
                       >
-                        <Switch
-                          size="small"
-                          value={g.enabled}
-                          onChange={(v) => void toggleGroup(g.id, Boolean(v))}
+                        <span
+                          className={`hm-dot${g.enabled ? " on" : ""}`}
+                          aria-hidden
                         />
+                        <span
+                          onClick={(e) => e.stopPropagation()}
+                          title={
+                            g.enabled ? "停用分组（整组暂停）" : "启用分组"
+                          }
+                        >
+                          <Switch
+                            size="small"
+                            value={g.enabled}
+                            onChange={(v) => void toggleGroup(g.id, Boolean(v))}
+                          />
+                        </span>
                         {renamingThis ? (
                           <input
                             className="hm-seg-rename"
                             autoFocus
                             value={renaming?.value ?? g.name}
+                            onClick={(e) => e.stopPropagation()}
                             onChange={(e) =>
                               setRenaming({ id: g.id, value: e.target.value })
                             }
@@ -446,27 +549,39 @@ export default function App(): React.ReactNode {
                             }}
                           />
                         ) : (
-                          <button
-                            type="button"
+                          <span
                             className="hm-seg-name"
-                            title={g.enabled ? "重命名分组" : "分组已停用（组内规则不生效）"}
-                            onClick={() => {
-                              renameCancelled.current = false;
-                              setSeg({ kind: "group", id: g.id });
-                              setRenaming({ id: g.id, value: g.name });
-                            }}
+                            aria-label={`查看分组 ${g.name}`}
                           >
                             <span className="hm-seg-text">{g.name}</span>
                             <span className="hm-count">
                               {counts.groupCount.get(g.id) ?? 0}
                             </span>
+                          </span>
+                        )}
+                        {!renamingThis && (
+                          <button
+                            type="button"
+                            className="hm-icon-btn"
+                            title="重命名分组"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              renameCancelled.current = false;
+                              setSeg({ kind: "group", id: g.id });
+                              setRenaming({ id: g.id, value: g.name });
+                            }}
+                          >
+                            ✎
                           </button>
                         )}
                         <button
                           type="button"
                           className="hm-icon-btn danger"
                           title="删除分组（组内规则归未分组）"
-                          onClick={() => setDeleteGroupId(g.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteGroupId(g.id);
+                          }}
                         >
                           ✕
                         </button>
@@ -493,12 +608,17 @@ export default function App(): React.ReactNode {
                     value={newGroupName}
                     onChange={(e) => setNewGroupName(e.target.value)}
                   />
-                  <Button type="submit" size="small" disabled={!newGroupName.trim()}>
+                  <Button
+                    type="submit"
+                    size="small"
+                    disabled={!newGroupName.trim()}
+                  >
                     添加
                   </Button>
                 </form>
                 <p className="hint hm-side-hint">
-                  组开关 = 整组暂停；点组名可重命名。删除组后成员归「未分组」。
+                  组开关 = 整组暂停；点击分组查看，✎
+                  重命名。删除组后成员归「未分组」。
                 </p>
               </aside>
 
@@ -517,7 +637,7 @@ export default function App(): React.ReactNode {
                     <span className="muted">
                       · {shownRules.length} 条
                       {isGroup &&
-                        !(groups.find((g) => g.id === seg.id)?.enabled) && (
+                        !groups.find((g) => g.id === seg.id)?.enabled && (
                           <span className="badge warn">分组已停用</span>
                         )}
                     </span>
@@ -572,7 +692,9 @@ export default function App(): React.ReactNode {
                 {loaded && shownRules.length === 0 && (
                   <EmptyState
                     icon={<FilterIcon />}
-                    title={rules.length === 0 ? "还没有请求头规则" : "没有匹配的规则"}
+                    title={
+                      rules.length === 0 ? "还没有请求头规则" : "没有匹配的规则"
+                    }
                     hint={
                       rules.length === 0
                         ? "点击右上角「新建规则」创建第一条"
@@ -582,6 +704,53 @@ export default function App(): React.ReactNode {
                 )}
 
                 <div className="hm-rule-list">
+                  {shownRules.length > 0 && (
+                    <div className="hm-select-bar">
+                      <Checkbox
+                        checked={
+                          shownRules.length > 0 &&
+                          shownRules.every((r) => selected.has(r.id))
+                        }
+                        indeterminate={
+                          shownRules.some((r) => selected.has(r.id)) &&
+                          !shownRules.every((r) => selected.has(r.id))
+                        }
+                        onChange={(v) => {
+                          const on = Boolean(v);
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            for (const r of shownRules) {
+                              if (on) next.add(r.id);
+                              else next.delete(r.id);
+                            }
+                            return next;
+                          });
+                        }}
+                      >
+                        全选
+                      </Checkbox>
+                      {selected.size > 0 && (
+                        <>
+                          <span className="muted">已选 {selected.size} 条</span>
+                          <Button
+                            size="small"
+                            variant="outline"
+                            theme="danger"
+                            onClick={() => setBulkDeleting(true)}
+                          >
+                            批量删除
+                          </Button>
+                          <button
+                            type="button"
+                            className="hm-text-btn"
+                            onClick={() => setSelected(new Set())}
+                          >
+                            取消选择
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {shownRules.map((rule) => {
                     const group = groups.find((g) => g.id === rule.groupId);
                     const groupOff = rule.groupId != null && !group?.enabled;
@@ -589,13 +758,21 @@ export default function App(): React.ReactNode {
                       rule.id in sessionOv ? sessionOv[rule.id]! : rule.enabled;
                     const regexLimited =
                       dnrLimited &&
-                      ((rule.condition.excludeRegex ?? []).some((p) => p.trim()) ||
+                      ((rule.condition.excludeRegex ?? []).some((p) =>
+                        p.trim(),
+                      ) ||
                         rule.kind === "body");
                     return (
                       <div
                         key={rule.id}
-                        className={`rule-row${effective ? "" : " disabled"}${groupOff ? " group-off" : ""}`}
+                        className={`rule-row${effective ? "" : " disabled"}${groupOff ? " group-off" : ""}${selected.has(rule.id) ? " selected" : ""}`}
                       >
+                        <span title="选择该规则（用于批量删除）">
+                          <Checkbox
+                            checked={selected.has(rule.id)}
+                            onChange={() => toggleSelect(rule.id)}
+                          />
+                        </span>
                         <Switch
                           size="small"
                           value={rule.enabled}
@@ -607,14 +784,23 @@ export default function App(): React.ReactNode {
                           onClick={() => setEditing(structuredClone(rule))}
                         >
                           <span className="rule-name">
-                            {group && <span className="badge group">{group.name}</span>}
-                            {regexLimited && <span className="badge warn">仅Firefox</span>}
-                            {rule.id in sessionOv && <span className="badge session">临时</span>}
-                            {groupOff && <span className="badge warn">组已停用</span>}
+                            {group && (
+                              <span className="badge group">{group.name}</span>
+                            )}
+                            {regexLimited && (
+                              <span className="badge warn">仅Firefox</span>
+                            )}
+                            {rule.id in sessionOv && (
+                              <span className="badge session">临时</span>
+                            )}
+                            {groupOff && (
+                              <span className="badge warn">组已停用</span>
+                            )}
                             {rule.name || "未命名规则"}
                           </span>
                           <span className="rule-sub">
-                            {describeCondition(rule.condition)} · {describeActions(rule)}
+                            {describeCondition(rule.condition)} ·{" "}
+                            {describeActions(rule)}
                           </span>
                         </button>
                         <div className="rule-ops hm-rule-ops">
@@ -653,6 +839,14 @@ export default function App(): React.ReactNode {
                           </button>
                           <button
                             type="button"
+                            className="hm-text-btn"
+                            title="复制为一条新规则"
+                            onClick={() => void duplicateRule(rule)}
+                          >
+                            复制
+                          </button>
+                          <button
+                            type="button"
                             className="hm-text-btn danger"
                             onClick={() => setDeleteId(rule.id)}
                           >
@@ -670,13 +864,19 @@ export default function App(): React.ReactNode {
 
         <Tabs.TabPanel value="logs" label="运行日志">
           {tab === "logs" && (
-            <LogsPane engineAvailable={engineAvailable} logCapable={logCapable} />
+            <LogsPane
+              engineAvailable={engineAvailable}
+              logCapable={logCapable}
+            />
           )}
         </Tabs.TabPanel>
 
         <Tabs.TabPanel value="stats" label="统计">
           {tab === "stats" && (
-            <StatsPane engineAvailable={engineAvailable} logCapable={logCapable} />
+            <StatsPane
+              engineAvailable={engineAvailable}
+              logCapable={logCapable}
+            />
           )}
         </Tabs.TabPanel>
       </Tabs>
@@ -691,6 +891,16 @@ export default function App(): React.ReactNode {
           if (deleteId) void removeRule(deleteId);
         }}
         onClose={() => setDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleting}
+        header="批量删除规则"
+        body={`确定删除已选的 ${selected.size} 条规则？删除后不可恢复。`}
+        confirmText={`删除 ${selected.size} 条`}
+        danger
+        onConfirm={() => void removeSelected()}
+        onClose={() => setBulkDeleting(false)}
       />
 
       <ConfirmDialog

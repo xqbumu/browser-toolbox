@@ -55,6 +55,18 @@
 .action-line > :first-child {
   flex: 1;
 }
+/* 动作行首位的启用开关不参与伸展（覆盖 :first-child 规则） */
+.action-line > .action-enable {
+  flex: none;
+}
+.action-row.action-off {
+  opacity: 0.62;
+  background: var(--tb-surface-2, #f6f7f9);
+}
+.action-row.action-off .t-input__inner,
+.action-row.action-off .t-select__single-input {
+  color: #9ca3af;
+}
 .actions {
   display: flex;
   gap: 8px;
@@ -91,6 +103,40 @@
 .rule-row.disabled .rule-name {
   color: #9ca3af;
   text-decoration: line-through;
+}
+/* 多选删除共用（管理中心 / options）：选中行描边 + 选择条 */
+.rule-row.selected {
+  outline: 1px solid var(--td-brand-color, #0052d9);
+  outline-offset: -1px;
+}
+.hm-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1px solid #eef0f3;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.hm-text-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--td-brand-color, #0052d9);
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.hm-text-btn:hover {
+  background: var(--td-brand-color-light, #ecf2fe);
+}
+.hm-text-btn.danger {
+  color: var(--td-error-color, #d54941);
+}
+.hm-text-btn.danger:hover {
+  background: var(--td-error-color-light, #fdecec);
 }
 button.as-button {
   background: none;

@@ -5,11 +5,13 @@
  * - 导入导出：文件导入（merge/replace）+ 复制导出 JSON。
  * 写操作统一走 background 消息，保证引擎即时同步。
  */
-import { useEffect, useState } from "react";
-import { Button, MessagePlugin, Switch } from "tdesign-react";
+import { useEffect, useMemo, useState } from "react";
+import { Button, Checkbox, MessagePlugin, Switch } from "tdesign-react";
 import {
   describeActions,
   describeCondition,
+  isGroupOff,
+  makeRuleCopy,
   newHeaderRule,
   validateHeaderRule,
   type HeaderRule,
@@ -35,9 +37,7 @@ export function HeaderRulesSection() {
   const [rules, setRules] = useState<HeaderRule[]>([]);
   const dnrLimited = detectHeaderEngine() === "dnr";
   const [groups, setGroups] = useState<HeaderGroup[]>([]);
-  const groupOffOf = (rule: HeaderRule): boolean =>
-    rule.groupId != null &&
-    !groups.find((g) => g.id === rule.groupId)?.enabled;
+  const groupOffOf = (rule: HeaderRule): boolean => isGroupOff(rule, groups);
   const warnGroupOff = (): void => {
     void MessagePlugin.warning({
       content: "分组已停用，组内规则暂不生效——请先开启分组",
@@ -131,10 +131,52 @@ export function HeaderRulesSection() {
   }
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const sortedRules = useMemo(
+    () => [...rules].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    [rules],
+  );
 
   async function performRemove(id: string): Promise<void> {
     await request({ type: "HEADERS_DELETE", payload: { id } }).catch(() => {});
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
     await reload();
+  }
+
+  /** 批量删除已选规则 */
+  async function removeSelected(): Promise<void> {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    try {
+      await request({ type: "HEADERS_DELETE_MANY", payload: { ids } });
+      flash(`已删除 ${ids.length} 条规则`);
+    } catch {
+      // 部分失败也刷新，以实际存储为准
+    }
+    setBulkDeleting(false);
+    setSelected(new Set());
+    await reload();
+  }
+
+  async function performCopy(rule: HeaderRule): Promise<void> {
+    try {
+      const copy = makeRuleCopy(rules, rule, genId());
+      await request({ type: "HEADERS_SAVE", payload: { rule: copy } });
+      await reload();
+      flash(`已复制「${copy.name}」`);
+    } catch (e) {
+      void MessagePlugin.error({
+        content: e instanceof Error ? e.message : String(e),
+        duration: 3000,
+      });
+    }
   }
 
   function startCreate(): void {
@@ -241,92 +283,152 @@ export function HeaderRulesSection() {
         />
       )}
 
-      <ul className="rule-list">
-        {[...rules]
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-          .map((rule) => (
-            <li
-              key={rule.id}
-              className={`rule-row${rule.enabled ? "" : " disabled"}${groupOffOf(rule) ? " group-off" : ""}`}
-            >
-              <Switch
+      {rules.length > 0 && !editing && (
+        <div className="hm-select-bar">
+          <Checkbox
+            checked={
+              sortedRules.length > 0 &&
+              sortedRules.every((r) => selected.has(r.id))
+            }
+            indeterminate={
+              sortedRules.some((r) => selected.has(r.id)) &&
+              !sortedRules.every((r) => selected.has(r.id))
+            }
+            onChange={(v) => {
+              const on = Boolean(v);
+              setSelected((prev) => {
+                const next = new Set(prev);
+                for (const r of sortedRules) {
+                  if (on) next.add(r.id);
+                  else next.delete(r.id);
+                }
+                return next;
+              });
+            }}
+          >
+            全选
+          </Checkbox>
+          {selected.size > 0 && (
+            <>
+              <span className="muted">已选 {selected.size} 条</span>
+              <Button
                 size="small"
-                value={rule.enabled}
-                onChange={(v) => void toggle(rule.id, Boolean(v))}
+                variant="outline"
+                theme="danger"
+                onClick={() => setBulkDeleting(true)}
+              >
+                批量删除
+              </Button>
+              <button
+                type="button"
+                className="hm-text-btn"
+                onClick={() => setSelected(new Set())}
+              >
+                取消选择
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <ul className="rule-list">
+        {sortedRules.map((rule) => (
+          <li
+            key={rule.id}
+            className={`rule-row${rule.enabled ? "" : " disabled"}${groupOffOf(rule) ? " group-off" : ""}${selected.has(rule.id) ? " selected" : ""}`}
+          >
+            <span title="选择该规则（用于批量删除）">
+              <Checkbox
+                checked={selected.has(rule.id)}
+                onChange={() =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(rule.id)) next.delete(rule.id);
+                    else next.add(rule.id);
+                    return next;
+                  })
+                }
               />
-              <div className="rule-meta">
-                <span className="rule-name">
-                  {rule.name || "未命名规则"}
-                  {(() => {
-                    const g = rule.groupId
-                      ? groups.find((x) => x.id === rule.groupId)
-                      : undefined;
-                    if (!g) return null;
-                    return g.enabled ? (
-                      <span className="badge group">{g.name}</span>
-                    ) : (
-                      <span className="badge warn">{g.name} · 已停用</span>
-                    );
-                  })()}
-                  {dnrLimited &&
-                    ((rule.condition.excludeRegex ?? []).some((p) =>
-                      p.trim(),
-                    ) ||
-                      rule.kind === "body") && (
-                      <span className="badge warn">仅Firefox</span>
-                    )}
-                  {rule.id in sessionOv && (
-                    <span className="badge session">临时</span>
+            </span>
+            <Switch
+              size="small"
+              value={rule.enabled}
+              onChange={(v) => void toggle(rule.id, Boolean(v))}
+            />
+            <div className="rule-meta">
+              <span className="rule-name">
+                {rule.name || "未命名规则"}
+                {(() => {
+                  const g = rule.groupId
+                    ? groups.find((x) => x.id === rule.groupId)
+                    : undefined;
+                  if (!g) return null;
+                  return g.enabled ? (
+                    <span className="badge group">{g.name}</span>
+                  ) : (
+                    <span className="badge warn">{g.name} · 已停用</span>
+                  );
+                })()}
+                {dnrLimited &&
+                  ((rule.condition.excludeRegex ?? []).some((p) => p.trim()) ||
+                    rule.kind === "body") && (
+                    <span className="badge warn">仅Firefox</span>
                   )}
-                </span>
-                <span
-                  className="rule-sub"
-                  title={describeCondition(rule.condition)}
-                >
-                  {describeCondition(rule.condition)} · {describeActions(rule)}
-                </span>
-              </div>
-              <div className="rule-ops">
-                <button
-                  title="上移"
-                  onClick={() => void moveRule(rule.id, "up")}
-                >
-                  ↑
-                </button>
-                <button
-                  title="下移"
-                  onClick={() => void moveRule(rule.id, "down")}
-                >
-                  ↓
-                </button>
-                <button
-                  onClick={() => {
-                    setErrors([]);
-                    setEditing(structuredClone(rule));
-                  }}
-                >
-                  编辑
-                </button>
-                <button
-                  className="session-text"
-                  title={
-                    rule.id in sessionOv
-                      ? "清除会话临时覆盖"
-                      : "本次会话临时翻转启用状态"
-                  }
-                  onClick={() => void toggleSession(rule.id)}
-                >
-                  ⚡
-                </button>
-                <button
-                  className="danger-text"
-                  onClick={() => setDeleteId(rule.id)}
-                >
-                  删除
-                </button>
-              </div>
-            </li>
-          ))}
+                {rule.id in sessionOv && (
+                  <span className="badge session">临时</span>
+                )}
+              </span>
+              <span
+                className="rule-sub"
+                title={describeCondition(rule.condition)}
+              >
+                {describeCondition(rule.condition)} · {describeActions(rule)}
+              </span>
+            </div>
+            <div className="rule-ops">
+              <button title="上移" onClick={() => void moveRule(rule.id, "up")}>
+                ↑
+              </button>
+              <button
+                title="下移"
+                onClick={() => void moveRule(rule.id, "down")}
+              >
+                ↓
+              </button>
+              <button
+                onClick={() => {
+                  setErrors([]);
+                  setEditing(structuredClone(rule));
+                }}
+              >
+                编辑
+              </button>
+              <button
+                title="复制为一条新规则"
+                onClick={() => void performCopy(rule)}
+              >
+                复制
+              </button>
+              <button
+                className="session-text"
+                title={
+                  rule.id in sessionOv
+                    ? "清除会话临时覆盖"
+                    : "本次会话临时翻转启用状态"
+                }
+                onClick={() => void toggleSession(rule.id)}
+              >
+                ⚡
+              </button>
+              <button
+                className="danger-text"
+                onClick={() => setDeleteId(rule.id)}
+              >
+                删除
+              </button>
+            </div>
+          </li>
+        ))}
       </ul>
 
       {rules.length === 0 && !editing && (
@@ -344,6 +446,16 @@ export function HeaderRulesSection() {
           setDeleteId(null);
         }}
         onClose={() => setDeleteId(null)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleting}
+        header="批量删除规则"
+        body={`确定删除已选的 ${selected.size} 条规则？删除后不可恢复。`}
+        confirmText={`删除 ${selected.size} 条`}
+        danger
+        onConfirm={() => void removeSelected()}
+        onClose={() => setBulkDeleting(false)}
       />
     </div>
   );

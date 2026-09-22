@@ -10,6 +10,8 @@ import type { HeaderGroup, HeaderRule } from "@/types/headers";
 import {
   describeActions,
   describeCondition,
+  isGroupOff,
+  makeRuleCopy,
   newHeaderRule,
 } from "@/types/headers";
 import { FilterIcon } from "tdesign-icons-react";
@@ -24,14 +26,6 @@ import {
 import { genId } from "@/utils/helpers";
 import { HeaderRuleEditor } from "@/ui/HeaderRuleEditor";
 import { collectLearnedHeaderNames } from "@/utils/header-hints";
-
-/** 规则所属分组是否停用（未分组恒视为启用）。组开关最高优先级：组停用时成员/会话覆盖均不生效 */
-function isGroupOff(rule: HeaderRule, groups: HeaderGroup[]): boolean {
-  return (
-    rule.groupId != null &&
-    !groups.find((g) => g.id === rule.groupId)?.enabled
-  );
-}
 
 function warnGroupOff(): void {
   void MessagePlugin.warning({
@@ -157,6 +151,20 @@ export function HeadersTool(): React.ReactNode {
     flash("已删除");
   }
 
+  async function performCopy(rule: HeaderRule): Promise<void> {
+    try {
+      const copy = makeRuleCopy(rules, rule, genId());
+      await request({ type: "HEADERS_SAVE", payload: { rule: copy } });
+      await reload();
+      flash(`已复制「${copy.name}」`);
+    } catch (e) {
+      void MessagePlugin.error({
+        content: e instanceof Error ? e.message : String(e),
+        duration: 3000,
+      });
+    }
+  }
+
   async function reload(): Promise<void> {
     try {
       setRules(
@@ -274,6 +282,7 @@ export function HeadersTool(): React.ReactNode {
                   badge
                   onToggle={(enabled) => void toggle(rule.id, enabled)}
                   onEdit={() => startEdit(rule)}
+                  onCopy={() => void performCopy(rule)}
                   onDelete={() => setDeleting(rule)}
                   sessionOverride={
                     rule.id in sessionOv ? sessionOv[rule.id]! : null
@@ -297,6 +306,7 @@ export function HeadersTool(): React.ReactNode {
               rule={rule}
               onToggle={(enabled) => void toggle(rule.id, enabled)}
               onEdit={() => startEdit(rule)}
+              onCopy={() => void performCopy(rule)}
               onDelete={() => setDeleting(rule)}
               sessionOverride={
                 rule.id in sessionOv ? sessionOv[rule.id]! : null
@@ -344,6 +354,7 @@ function RuleRow(props: {
   badge?: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
+  onCopy: () => void;
   onDelete: () => void;
   /** 会话级临时覆盖：true=强制启用 false=强制停用 null=清除覆盖 */
   sessionOverride: boolean | null;
@@ -362,7 +373,9 @@ function RuleRow(props: {
   const effective =
     props.sessionOverride === null ? rule.enabled : props.sessionOverride;
   return (
-    <div className={`rule-row${effective ? "" : " disabled"}${groupOff ? " group-off" : ""}`}>
+    <div
+      className={`rule-row${effective ? "" : " disabled"}${groupOff ? " group-off" : ""}`}
+    >
       <label className="switch">
         <input
           type="checkbox"
@@ -401,6 +414,14 @@ function RuleRow(props: {
         onClick={props.onSessionToggle}
       >
         ⚡
+      </button>
+      <button
+        type="button"
+        className="session-text"
+        title="复制为一条新规则"
+        onClick={props.onCopy}
+      >
+        ⧉
       </button>
       <button
         type="button"
